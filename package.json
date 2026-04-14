@@ -8,12 +8,14 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "migrate": "ts-node src/lib/migrations.ts",
+    "db:seed": "ts-node src/db/seed.ts",
     "test": "vitest run"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "pg": "^8.13.3"
+    "pg": "^8.13.3",
+    "pgvector": "^0.2.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

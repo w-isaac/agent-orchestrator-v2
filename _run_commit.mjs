@@ -18,7 +18,7 @@ if (!existsSync('/bin/sh')) {
   }
 }
 
-const cwd = '/tmp/worktree-aov-5';
+const cwd = '/tmp/worktree-aov-8';
 
 function run(cmd, opts = {}) {
   console.log(`\n--- ${cmd} ---`);
@@ -38,13 +38,13 @@ function run(cmd, opts = {}) {
 run('npm install');
 
 // Run tests
-run('npx vitest run src/services/graphTraversal.test.ts src/services/embeddingReranker.test.ts src/services/budgetPacker.test.ts src/services/contextRetrievalPipeline.test.ts');
+run('npx vitest run src/services/promptBuilder.test.ts src/routes/prompt-builder.test.ts');
 
 // Stage files
-run('git add src/services/graphTraversal.ts src/services/embeddingReranker.ts src/services/budgetPacker.ts src/services/contextRetrievalPipeline.ts src/routes/context-retrieval.ts src/services/graphTraversal.test.ts src/services/embeddingReranker.test.ts src/services/budgetPacker.test.ts src/services/contextRetrievalPipeline.test.ts src/app.ts src/routes/index.ts');
+run('git add src/migrations/005_prompt_builder.sql src/services/promptBuilder.ts src/services/promptBuilder.test.ts src/routes/prompt-builder.ts src/routes/prompt-builder.test.ts src/routes/index.ts src/app.ts client/js/prompt-builder.js client/index.html');
 
 // Commit
-const commitMsg = `feat(AOV-5): Implement three-phase context retrieval: graph traversal, embedding re-ranking, and budget packing
+const commitMsg = `feat(AOV-8): Prompt construction module with tiered context injection and token budget enforcement
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`;
 run(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);

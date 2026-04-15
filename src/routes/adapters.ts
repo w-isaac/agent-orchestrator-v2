@@ -196,6 +196,78 @@ adaptersRouter.get('/api/runs/:id/gemini-job', async (req: Request, res: Respons
   }
 });
 
+/** Get Codex poll status for a run */
+adaptersRouter.get('/api/runs/:id/poll-status', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const runId = req.params.id;
+
+    const { rows: runRows } = await pool.query(
+      `SELECT id, openai_run_id, adapter_type, status FROM agent_runs WHERE id = $1`,
+      [runId],
+    );
+
+    if (runRows.length === 0) {
+      res.status(404).json({ error: 'Run not found' });
+      return;
+    }
+
+    const run = runRows[0];
+    const { rows: attempts } = await pool.query(
+      `SELECT attempt, status, http_status, error_type, error_msg, backoff_ms, created_at
+       FROM codex_poll_attempts WHERE run_id = $1 ORDER BY attempt ASC`,
+      [runId],
+    );
+
+    res.json({
+      run_id: run.id,
+      openai_run_id: run.openai_run_id,
+      adapter_type: run.adapter_type,
+      status: run.status,
+      attempts,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** Requeue a failed/cancelled Codex run */
+adaptersRouter.post('/api/runs/:id/requeue', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const runId = req.params.id;
+
+    const { rows: runRows } = await pool.query(
+      `SELECT id, story_id, adapter_type, status FROM agent_runs WHERE id = $1`,
+      [runId],
+    );
+
+    if (runRows.length === 0) {
+      res.status(404).json({ error: 'Run not found' });
+      return;
+    }
+
+    const run = runRows[0];
+    if (!['failed', 'cancelled'].includes(run.status)) {
+      res.status(400).json({ error: `Cannot requeue run with status '${run.status}'. Only failed or cancelled runs can be requeued.` });
+      return;
+    }
+
+    const newRunId = randomUUID();
+    const now = new Date().toISOString();
+
+    await pool.query(
+      `INSERT INTO agent_runs (id, story_id, adapter_type, status, created_at)
+       VALUES ($1, $2, $3, 'queued', $4)`,
+      [newRunId, run.story_id, run.adapter_type ?? 'codex', now],
+    );
+
+    res.json({ new_run_id: newRunId, story_id: run.story_id, status: 'queued' });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 /** Cancel active Gemini polling */
 adaptersRouter.post('/api/runs/:id/cancel-poll', async (req: Request, res: Response) => {
   try {

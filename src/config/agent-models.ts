@@ -8,6 +8,7 @@ export interface AgentCost {
 export const ADAPTER_CAPACITY: Record<string, number> = {
   claude: 200000,
   gemini: 1048576,
+  codex: 128000,
 };
 
 export const AGENT_COSTS: Record<string, AgentCost> = {
@@ -45,6 +46,11 @@ export const AGENT_COSTS: Record<string, AgentCost> = {
     model: 'gemini-1.5-pro',
     pricePerInputToken: 0.00000125,
     pricePerOutputToken: 0.000005,
+  },
+  codex: {
+    model: 'codex-mini',
+    pricePerInputToken: 0.0000015,
+    pricePerOutputToken: 0.000006,
   },
 };
 

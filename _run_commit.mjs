@@ -18,7 +18,7 @@ if (!existsSync('/bin/sh')) {
   }
 }
 
-const cwd = '/tmp/worktree-aov-12';
+const cwd = '/tmp/worktree-aov-11';
 
 function run(cmd, opts = {}) {
   console.log(`\n--- ${cmd} ---`);
@@ -38,13 +38,13 @@ function run(cmd, opts = {}) {
 run('npm install');
 
 // Run tests
-run('npx vitest run src/adapters/gemini-runner.test.ts src/adapters/gemini-adapter.test.ts src/services/tokenCounter.test.ts src/services/adapterRouter.test.ts src/routes/adapters.test.ts');
+run('npx vitest run src/adapters/codex-runner.test.ts src/adapters/codex-adapter.test.ts src/config/codex-config.test.ts');
 
 // Stage files
-run('git add src/migrations/006_gemini_adapter.sql src/adapters/adapter-interface.ts src/adapters/gemini-runner.ts src/adapters/gemini-adapter.ts src/adapters/claude-adapter.ts src/adapters/index.ts src/adapters/gemini-runner.test.ts src/adapters/gemini-adapter.test.ts src/services/tokenCounter.ts src/services/tokenCounter.test.ts src/services/adapterRouter.ts src/services/adapterRouter.test.ts src/services/index.ts src/routes/adapters.ts src/routes/adapters.test.ts src/routes/index.ts src/app.ts src/config/agent-models.ts');
+run('git add src/migrations/007_codex_adapter.sql src/config/codex-config.ts src/config/codex-config.test.ts src/adapters/codex-runner.ts src/adapters/codex-runner.test.ts src/adapters/codex-adapter.ts src/adapters/codex-adapter.test.ts src/adapters/index.ts src/config/agent-models.ts src/routes/adapters.ts src/services/adapterRouter.ts');
 
 // Commit
-const commitMsg = `feat(AOV-12): Gemini adapter: full prompt with embedded context, async polling, and result normalization
+const commitMsg = `feat(AOV-11): Codex adapter: full prompt with embedded context, async polling, and result normalization
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`;
 run(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);

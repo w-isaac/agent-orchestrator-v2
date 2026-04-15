@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS ingested_files (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   file_name VARCHAR(255) NOT NULL,
   file_path TEXT NOT NULL,
-  file_type VARCHAR(50) NOT NULL CHECK (file_type IN ('markdown', 'typescript', 'python', 'javascript')),
+  file_type VARCHAR(50) NOT NULL CHECK (file_type IN ('markdown', 'typescript', 'python', 'javascript', 'pdf', 'spreadsheet', 'design')),
   file_hash VARCHAR(64) NOT NULL,
   storage_path TEXT NOT NULL,
   file_size_bytes INTEGER NOT NULL,

@@ -9,3 +9,4 @@ export { graphsRouter } from './graphs';
 export { contextRetrievalRouter } from './context-retrieval';
 export { promptBuilderRouter } from './prompt-builder';
 export { adaptersRouter } from './adapters';
+export { ingestionRouter } from './ingestion';

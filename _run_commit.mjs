@@ -18,7 +18,7 @@ if (!existsSync('/bin/sh')) {
   }
 }
 
-const cwd = '/tmp/worktree-aov-11';
+const cwd = '/tmp/worktree-aov-15';
 
 function run(cmd, opts = {}) {
   console.log(`\n--- ${cmd} ---`);
@@ -38,16 +38,19 @@ function run(cmd, opts = {}) {
 run('npm install');
 
 // Run tests
-run('npx vitest run src/adapters/codex-runner.test.ts src/adapters/codex-adapter.test.ts src/config/codex-config.test.ts');
+try {
+  run('npx vitest run src/services/ingestion/pdfParser.test.ts src/services/ingestion/spreadsheetParser.test.ts src/services/ingestion/designFileParser.test.ts src/services/ingestion/ingestionPipeline.test.ts src/routes/ingestion.test.ts');
+} catch (e) {
+  console.error('Tests failed, see output above');
+  process.exit(1);
+}
 
 // Stage files
-run('git add src/migrations/007_codex_adapter.sql src/config/codex-config.ts src/config/codex-config.test.ts src/adapters/codex-runner.ts src/adapters/codex-runner.test.ts src/adapters/codex-adapter.ts src/adapters/codex-adapter.test.ts src/adapters/index.ts src/config/agent-models.ts src/routes/adapters.ts src/services/adapterRouter.ts');
+run('git add src/migrations/009_parsed_units.sql src/migrations/004_create_ingested_files_and_ingestion_chunks.sql src/services/ingestion/fileTypeDetector.ts src/services/ingestion/pdfParser.ts src/services/ingestion/pdfParser.test.ts src/services/ingestion/spreadsheetParser.ts src/services/ingestion/spreadsheetParser.test.ts src/services/ingestion/designFileParser.ts src/services/ingestion/designFileParser.test.ts src/services/ingestion/ingestionPipeline.ts src/services/ingestion/ingestionPipeline.test.ts src/routes/ingestion.ts src/routes/ingestion.test.ts src/routes/index.ts src/app.ts');
 
 // Commit
-const commitMsg = `feat(AOV-11): Codex adapter: full prompt with embedded context, async polling, and result normalization
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`;
-run(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);
+const commitMsg = 'feat(AOV-15): Extend ingestion with section-based PDF, per-sheet spreadsheet, and per-component design file parsing';
+run(`git commit -m "${commitMsg}"`);
 
 // Show status
 run('git log --oneline -3');

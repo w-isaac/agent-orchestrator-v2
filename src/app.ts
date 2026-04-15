@@ -11,6 +11,7 @@ import { seedStatusRouter } from './routes/seed-status';
 import { graphsRouter } from './routes/graphs';
 import { contextRetrievalRouter } from './routes/context-retrieval';
 import { promptBuilderRouter } from './routes/prompt-builder';
+import { adaptersRouter } from './routes/adapters';
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use(seedStatusRouter);
 app.use(graphsRouter);
 app.use(contextRetrievalRouter);
 app.use(promptBuilderRouter);
+app.use(adaptersRouter);
 
 // Static file serving: prefer built SPA in client/dist/, fall back to client/ scaffold
 const clientDir = join(__dirname, '../client');

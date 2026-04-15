@@ -5,6 +5,11 @@ export interface AgentCost {
 }
 
 // Price per token in USD (approximations based on public pricing)
+export const ADAPTER_CAPACITY: Record<string, number> = {
+  claude: 200000,
+  gemini: 1048576,
+};
+
 export const AGENT_COSTS: Record<string, AgentCost> = {
   claude_code: {
     model: 'claude-sonnet-4-20250514',
@@ -35,6 +40,11 @@ export const AGENT_COSTS: Record<string, AgentCost> = {
     model: 'claude-sonnet-4-20250514',
     pricePerInputToken: 0.000003,
     pricePerOutputToken: 0.000015,
+  },
+  gemini: {
+    model: 'gemini-1.5-pro',
+    pricePerInputToken: 0.00000125,
+    pricePerOutputToken: 0.000005,
   },
 };
 

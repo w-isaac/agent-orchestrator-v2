@@ -13,6 +13,7 @@ import { contextRetrievalRouter } from './routes/context-retrieval';
 import { promptBuilderRouter } from './routes/prompt-builder';
 import { adaptersRouter } from './routes/adapters';
 import { ingestionRouter } from './routes/ingestion';
+import { graphRouter } from './routes/graph';
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use(contextRetrievalRouter);
 app.use(promptBuilderRouter);
 app.use(adaptersRouter);
 app.use(ingestionRouter);
+app.use(graphRouter);
 
 // Static file serving: prefer built SPA in client/dist/, fall back to client/ scaffold
 const clientDir = join(__dirname, '../client');

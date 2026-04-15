@@ -11,37 +11,37 @@ if (!existsSync('/bin/sh')) {
   }
 }
 
-// Now run git commands
-try {
-  const cwd = '/tmp/worktree-aov-6';
+const cwd = '/tmp/worktree-aov-23';
 
-  console.log('--- git status ---');
-  console.log(execSync('git status', { cwd, encoding: 'utf8' }));
+function run(cmd, opts = {}) {
+  console.log(`\n--- ${cmd} ---`);
+  try {
+    const out = execSync(cmd, { cwd, encoding: 'utf8', timeout: 120000, ...opts });
+    console.log(out);
+    return out;
+  } catch (e) {
+    console.error('FAILED:', e.message);
+    if (e.stdout) console.log('stdout:', e.stdout.toString());
+    if (e.stderr) console.log('stderr:', e.stderr.toString());
+    throw e;
+  }
+}
 
-  console.log('--- git add ---');
-  execSync('git add src/routes/graphs.ts src/routes/graphs.test.ts src/routes/index.ts src/app.ts', { cwd, encoding: 'utf8' });
-  console.log('Files staged successfully');
+// Install deps
+run('npm install');
 
-  console.log('--- git commit ---');
-  const commitMsg = `feat(AOV-6): JSON import/export for context graph
+// Run tests
+run('npx vitest run src/routes/static-serve.test.ts client/__tests__/utils.test.js');
 
-Adds three new endpoints on the graphs router:
-- POST /api/graphs/:projectId/import - bulk import nodes and edges with validation
-- GET /api/graphs/:projectId/export - export full graph as JSON
-- GET /api/graphs/:projectId/counts - return node/edge counts
+// Stage files
+run('git add client/index.html client/css/base.css client/css/components.css client/js/utils.js client/assets/.gitkeep client/__tests__/utils.test.js src/app.ts src/routes/static-serve.test.ts package.json vitest.config.ts');
 
-Includes comprehensive test coverage for all endpoints, validation edge
-cases, and transaction rollback behavior.
+// Commit
+const commitMsg = `feat(AOV-23): Frontend scaffold: extract v1 static assets and serve via Docker
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`;
+run(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);
 
-  const result = execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd, encoding: 'utf8' });
-  console.log(result);
-
-  console.log('--- git log ---');
-  console.log(execSync('git log --oneline -5', { cwd, encoding: 'utf8' }));
-} catch (e) {
-  console.error('Command failed:', e.message);
-  if (e.stdout) console.log('stdout:', e.stdout.toString());
-  if (e.stderr) console.log('stderr:', e.stderr.toString());
-}
+// Show status
+run('git log --oneline -3');
+run('git status');

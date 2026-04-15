@@ -9,7 +9,9 @@
     "start": "node dist/index.js",
     "migrate": "ts-node src/lib/migrations.ts",
     "db:seed": "ts-node src/db/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

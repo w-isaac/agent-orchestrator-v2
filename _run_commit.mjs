@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { symlinkSync, existsSync } from 'fs';
+import { symlinkSync, existsSync, chmodSync } from 'fs';
 
 // Create /bin/sh symlink to busybox so shell commands work
 if (!existsSync('/bin/sh')) {
@@ -9,9 +9,16 @@ if (!existsSync('/bin/sh')) {
   } catch (e) {
     console.error('Failed to create symlink:', e.message);
   }
+} else {
+  try {
+    chmodSync('/bin/sh', 0o755);
+    console.log('/bin/sh already exists, ensured +x');
+  } catch (e) {
+    console.log('/bin/sh exists');
+  }
 }
 
-const cwd = '/tmp/worktree-aov-23';
+const cwd = '/tmp/worktree-aov-5';
 
 function run(cmd, opts = {}) {
   console.log(`\n--- ${cmd} ---`);
@@ -31,13 +38,13 @@ function run(cmd, opts = {}) {
 run('npm install');
 
 // Run tests
-run('npx vitest run src/routes/static-serve.test.ts client/__tests__/utils.test.js');
+run('npx vitest run src/services/graphTraversal.test.ts src/services/embeddingReranker.test.ts src/services/budgetPacker.test.ts src/services/contextRetrievalPipeline.test.ts');
 
 // Stage files
-run('git add client/index.html client/css/base.css client/css/components.css client/js/utils.js client/assets/.gitkeep client/__tests__/utils.test.js src/app.ts src/routes/static-serve.test.ts package.json vitest.config.ts');
+run('git add src/services/graphTraversal.ts src/services/embeddingReranker.ts src/services/budgetPacker.ts src/services/contextRetrievalPipeline.ts src/routes/context-retrieval.ts src/services/graphTraversal.test.ts src/services/embeddingReranker.test.ts src/services/budgetPacker.test.ts src/services/contextRetrievalPipeline.test.ts src/app.ts src/routes/index.ts');
 
 // Commit
-const commitMsg = `feat(AOV-23): Frontend scaffold: extract v1 static assets and serve via Docker
+const commitMsg = `feat(AOV-5): Implement three-phase context retrieval: graph traversal, embedding re-ranking, and budget packing
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`;
 run(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);

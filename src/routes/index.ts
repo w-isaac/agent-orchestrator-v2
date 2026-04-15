@@ -6,3 +6,4 @@ export { contextEdgesRouter } from './context-edges';
 export { contextTasksRouter } from './context-tasks';
 export { seedStatusRouter } from './seed-status';
 export { graphsRouter } from './graphs';
+export { contextRetrievalRouter } from './context-retrieval';

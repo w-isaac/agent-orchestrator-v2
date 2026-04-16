@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getPool } from '../lib/db';
 import { TaskDispatcher, defaultValidator } from '../services/taskDispatcher';
 import { ClaudeCodeAdapter } from '../agents/claude-code-adapter';
+import { runPreflight, estimateBudget } from '../services/preflightService';
 
 export const tasksRouter = Router();
 
@@ -26,6 +27,22 @@ tasksRouter.post('/api/tasks', async (req: Request, res: Response) => {
     }
     const task = await getDispatcher().submit({ type, payload, priority, timeout_seconds, submitted_by });
     res.status(201).json(task);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** POST /api/tasks/estimate-budget — estimate token budget for seed nodes */
+tasksRouter.post('/api/tasks/estimate-budget', async (req: Request, res: Response) => {
+  try {
+    const { seed_node_ids } = req.body;
+    if (!seed_node_ids || !Array.isArray(seed_node_ids)) {
+      res.status(400).json({ error: 'seed_node_ids array is required' });
+      return;
+    }
+    const pool = getPool();
+    const result = await estimateBudget(pool, seed_node_ids);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -74,6 +91,23 @@ tasksRouter.post('/api/tasks/:id/retry', async (req: Request, res: Response) => 
       res.status(409).json({ error: message });
     } else {
       res.status(500).json({ error: message });
+    }
+  }
+});
+
+/** POST /api/tasks/:id/preflight — run pre-flight validation */
+tasksRouter.post('/api/tasks/:id/preflight', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const result = await runPreflight(pool, req.params.id);
+    res.json(result);
+  } catch (err: any) {
+    if (err.code === 'NOT_FOUND') {
+      res.status(404).json({ error: err.message });
+    } else if (err.code === 'CONFLICT') {
+      res.status(409).json({ error: err.message });
+    } else {
+      res.status(500).json({ error: (err as Error).message });
     }
   }
 });

@@ -4,3 +4,5 @@ export { updateStats, refreshRollingWindows } from './performanceTracker';
 export { selectAdapter } from './adapterRouter';
 export type { AdapterRoutingResult } from './adapterRouter';
 export { estimateTokens } from './tokenCounter';
+export { runPreflight, estimateBudget } from './preflightService';
+export type { PreflightResult, CheckResult } from './preflightService';

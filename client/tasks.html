@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Board — Agent Orchestrator</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/tasks.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <header class="navbar">
+    <div class="navbar-brand">Agent Orchestrator</div>
+    <nav aria-label="Primary navigation">
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/dashboard.html">Projects</a></li>
+        <li><a href="/tasks.html" aria-current="page">Tasks</a></li>
+        <li><a href="/graph.html">Graph</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main id="main-content">
+    <div class="board-header">
+      <h1>Tasks</h1>
+      <div class="board-actions">
+        <select id="project-select" aria-label="Select project">
+          <option value="">Select a project...</option>
+        </select>
+        <button class="btn btn-primary" id="new-task-btn" disabled>New Task</button>
+      </div>
+    </div>
+    <div id="error-banner" class="error-banner" style="display:none">
+      <span id="error-msg"></span>
+      <button id="retry-btn">Retry</button>
+    </div>
+    <div class="board" id="task-board">
+      <div class="status-column" data-status="queued">
+        <div class="column-header">
+          <h2>Queued</h2>
+          <span class="count-badge" id="count-queued">0</span>
+        </div>
+        <div class="card-list" id="list-queued"></div>
+      </div>
+      <div class="status-column" data-status="in_progress">
+        <div class="column-header">
+          <h2>In Progress</h2>
+          <span class="count-badge" id="count-in_progress">0</span>
+        </div>
+        <div class="card-list" id="list-in_progress"></div>
+      </div>
+      <div class="status-column" data-status="complete">
+        <div class="column-header">
+          <h2>Complete</h2>
+          <span class="count-badge" id="count-complete">0</span>
+        </div>
+        <div class="card-list" id="list-complete"></div>
+      </div>
+    </div>
+
+    <!-- Create Task Modal -->
+    <div class="modal-overlay" id="modal-overlay" style="display:none">
+      <div class="modal" role="dialog" aria-labelledby="modal-title">
+        <h2 id="modal-title">New Task</h2>
+        <form id="create-task-form">
+          <label for="task-title">Title <span class="required">*</span></label>
+          <input type="text" id="task-title" name="title" required placeholder="Task title">
+          <label for="task-description">Description</label>
+          <textarea id="task-description" name="description" rows="3" placeholder="Optional description"></textarea>
+          <div class="modal-meta">
+            <span class="badge badge-queued">Queued</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="modal-submit">Create Task</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <p>&copy; 2026 Agent Orchestrator. All rights reserved.</p>
+  </footer>
+  <script src="/js/tasks.js"></script>
+</body>
+</html>

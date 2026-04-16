@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context Preview — Agent Orchestrator</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/context-preview.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <header class="navbar">
+    <div class="navbar-brand">Agent Orchestrator</div>
+    <nav aria-label="Primary navigation">
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/dashboard.html">Projects</a></li>
+        <li><a href="/tasks.html">Tasks</a></li>
+        <li><a href="/graph.html">Graph</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main id="main-content">
+    <div class="page-header">
+      <h1>Task Dispatch</h1>
+      <div class="page-actions">
+        <label for="story-select">Story:</label>
+        <input type="text" id="story-select" placeholder="Enter story ID..." aria-label="Story ID">
+        <button class="btn btn-secondary" id="preview-context-btn" disabled title="No context artifacts retrieved">Preview Context</button>
+        <button class="btn btn-primary" id="dispatch-btn" disabled>Dispatch</button>
+      </div>
+    </div>
+
+    <div id="error-banner" class="error-banner" style="display:none">
+      <span id="error-msg"></span>
+      <button id="retry-btn">Retry</button>
+    </div>
+
+    <div class="task-detail" id="task-detail">
+      <p class="placeholder-text">Enter a story ID to preview context artifacts.</p>
+    </div>
+
+    <!-- Context Preview Slide-over Panel -->
+    <div class="panel-backdrop" id="panel-backdrop" style="display:none">
+      <aside class="context-preview-panel" id="context-preview-panel" role="dialog" aria-labelledby="panel-title">
+        <div class="panel-header">
+          <h2 id="panel-title">Context Preview</h2>
+          <button class="btn-icon" id="panel-close" aria-label="Close preview">&times;</button>
+        </div>
+        <div class="panel-body" id="panel-body">
+          <!-- Skeleton / artifact list rendered here -->
+        </div>
+        <div class="panel-footer" id="panel-footer">
+          <span id="summary-text">Total: 0 artifacts &middot; 0 tokens</span>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <footer>
+    <p>&copy; 2026 Agent Orchestrator. All rights reserved.</p>
+  </footer>
+  <script src="/js/context-preview.js"></script>
+</body>
+</html>

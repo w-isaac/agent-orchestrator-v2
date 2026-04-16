@@ -15,6 +15,7 @@ import { adaptersRouter } from './routes/adapters';
 import { ingestionRouter } from './routes/ingestion';
 import { graphRouter } from './routes/graph';
 import { tasksRouter } from './routes/tasks';
+import { storiesRouter } from './routes/stories';
 import { v2Router } from './api/v2';
 import { tasksRouter } from './api/tasks';
 
@@ -35,6 +36,7 @@ app.use(adaptersRouter);
 app.use(ingestionRouter);
 app.use(graphRouter);
 app.use(tasksRouter);
+app.use(storiesRouter);
 app.use(v2Router);
 app.use(tasksRouter);
 

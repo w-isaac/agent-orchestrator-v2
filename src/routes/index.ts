@@ -12,3 +12,4 @@ export { adaptersRouter } from './adapters';
 export { ingestionRouter } from './ingestion';
 export { graphRouter } from './graph';
 export { tasksRouter } from './tasks';
+export { storiesRouter } from './stories';

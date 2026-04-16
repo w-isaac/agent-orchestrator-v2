@@ -107,6 +107,98 @@ describe('graph API', () => {
     });
   });
 
+  describe('GET /api/graph/:projectId', () => {
+    const PROJECT_ID = '33333333-3333-3333-3333-333333333333';
+
+    it('returns nodes and edges for a project', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: PROJECT_ID }] }) // project check
+        .mockResolvedValueOnce({ rows: [
+          { id: 'n1', type: 'artifact', label: 'spec.md' },
+          { id: 'n2', type: 'task', label: 'Build login' },
+        ]}) // context_nodes
+        .mockResolvedValueOnce({ rows: [
+          { source_id: 'n1', target_id: 'n2' },
+        ]}) // context_edges
+        .mockResolvedValueOnce({ rows: [] }) // graph_edges
+        .mockResolvedValueOnce({ rows: [] }); // context_graph_edges
+
+      const res = await request(createApp()).get(`/api/graph/${PROJECT_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.nodes).toHaveLength(2);
+      expect(res.body.edges).toHaveLength(1);
+      expect(res.body.nodes[0].type).toBe('artifact');
+      expect(res.body.edges[0].source).toBe('n1');
+      expect(res.body.edges[0].target).toBe('n2');
+      expect(res.body.edges[0].weight).toBe(1.0);
+    });
+
+    it('returns 404 for non-existent project', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const res = await request(createApp()).get(`/api/graph/${PROJECT_ID}`);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('returns empty graph for project with no nodes', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: PROJECT_ID }] })
+        .mockResolvedValueOnce({ rows: [] }) // no context_nodes
+        .mockResolvedValueOnce({ rows: [] }); // no context_graph_edges
+
+      const res = await request(createApp()).get(`/api/graph/${PROJECT_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.nodes).toHaveLength(0);
+      expect(res.body.edges).toHaveLength(0);
+    });
+
+    it('includes context nodes from context_graph_edges', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: PROJECT_ID }] }) // project check
+        .mockResolvedValueOnce({ rows: [
+          { id: 'n1', type: 'artifact', label: 'doc.md' },
+        ]}) // context_nodes
+        .mockResolvedValueOnce({ rows: [] }) // context_edges
+        .mockResolvedValueOnce({ rows: [] }) // graph_edges
+        .mockResolvedValueOnce({ rows: [
+          { source_type: 'artifact', source_id: 'n1', target_type: 'context', target_id: 'ctx-1', weight: 0.65 },
+        ]}); // context_graph_edges with context node
+
+      const res = await request(createApp()).get(`/api/graph/${PROJECT_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.nodes).toHaveLength(2);
+      const ctxNode = res.body.nodes.find((n: any) => n.type === 'context');
+      expect(ctxNode).toBeDefined();
+      expect(ctxNode.id).toBe('ctx-1');
+      expect(res.body.edges).toHaveLength(1);
+      expect(res.body.edges[0].weight).toBe(0.65);
+    });
+
+    it('deduplicates edges', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: PROJECT_ID }] })
+        .mockResolvedValueOnce({ rows: [
+          { id: 'n1', type: 'artifact', label: 'a' },
+          { id: 'n2', type: 'task', label: 'b' },
+        ]})
+        .mockResolvedValueOnce({ rows: [
+          { source_id: 'n1', target_id: 'n2' },
+        ]}) // context_edges
+        .mockResolvedValueOnce({ rows: [
+          { source_artifact_id: 'n1', target_artifact_id: 'n2', weight: '0.9' },
+        ]}) // graph_edges (duplicate)
+        .mockResolvedValueOnce({ rows: [] });
+
+      const res = await request(createApp()).get(`/api/graph/${PROJECT_ID}`);
+
+      expect(res.body.edges).toHaveLength(1); // deduped
+    });
+  });
+
   describe('GET /api/graph/data', () => {
     it('returns nodes and edges for project', async () => {
       pool.query

@@ -213,6 +213,99 @@ graphRouter.get('/api/graph/edges/export', async (req: Request, res: Response) =
   }
 });
 
+// GET /api/graph/:projectId — Assembled force-directed graph for a project
+graphRouter.get('/api/graph/:projectId', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { projectId } = req.params;
+
+    // Verify project exists
+    const { rows: projectRows } = await pool.query('SELECT id FROM projects WHERE id = $1', [projectId]);
+    if (projectRows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // 1. Fetch context_nodes for project → typed nodes
+    const { rows: rawNodes } = await pool.query(
+      `SELECT id, type, COALESCE(metadata->>'name', metadata->>'title', type || '-' || LEFT(id::text, 8)) AS label
+       FROM context_nodes WHERE project_id = $1`,
+      [projectId],
+    );
+
+    const nodeMap = new Map<string, { id: string; type: string; label: string }>();
+    const nodes: { id: string; type: string; label: string }[] = [];
+
+    for (const n of rawNodes) {
+      const nodeType = (['artifact', 'task', 'context'].includes(n.type)) ? n.type : 'artifact';
+      const node = { id: n.id, type: nodeType, label: n.label || n.id };
+      nodeMap.set(n.id, node);
+      nodes.push(node);
+    }
+
+    const edges: { source: string; target: string; weight: number }[] = [];
+    const edgeSet = new Set<string>();
+
+    function addEdge(source: string, target: string, weight: number) {
+      const key = `${source}->${target}`;
+      if (!edgeSet.has(key) && nodeMap.has(source) && nodeMap.has(target)) {
+        edgeSet.add(key);
+        edges.push({ source, target, weight });
+      }
+    }
+
+    if (rawNodes.length > 0) {
+      const nodeIds = rawNodes.map((n: any) => n.id);
+
+      // 2. Fetch context_edges between nodes
+      const { rows: ctxEdges } = await pool.query(
+        `SELECT source_id, target_id FROM context_edges
+         WHERE source_id = ANY($1) AND target_id = ANY($1)`,
+        [nodeIds],
+      );
+      for (const e of ctxEdges) {
+        addEdge(e.source_id, e.target_id, 1.0);
+      }
+
+      // 3. Fetch graph_edges between nodes (similarity_score as weight)
+      const { rows: gEdges } = await pool.query(
+        `SELECT source_artifact_id, target_artifact_id, COALESCE(similarity_score, 1.0) AS weight
+         FROM graph_edges
+         WHERE source_artifact_id = ANY($1) AND target_artifact_id = ANY($1)`,
+        [nodeIds],
+      );
+      for (const e of gEdges) {
+        addEdge(e.source_artifact_id, e.target_artifact_id, parseFloat(e.weight));
+      }
+    }
+
+    // 4. Fetch context_graph_edges for project (explicit weighted edges + context nodes)
+    const { rows: cgeRows } = await pool.query(
+      `SELECT source_type, source_id, target_type, target_id, weight
+       FROM context_graph_edges WHERE project_id = $1`,
+      [projectId],
+    );
+
+    for (const cge of cgeRows) {
+      // Add context nodes if not already present
+      for (const side of ['source', 'target'] as const) {
+        const type = cge[`${side}_type`];
+        const id = cge[`${side}_id`];
+        if (!nodeMap.has(id) && type === 'context') {
+          const node = { id, type: 'context', label: `context-${id.substring(0, 8)}` };
+          nodeMap.set(id, node);
+          nodes.push(node);
+        }
+      }
+      addEdge(cge.source_id, cge.target_id, parseFloat(cge.weight));
+    }
+
+    res.json({ nodes, edges });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // GET /api/graph/artifacts/:id/edges — Edges for a single artifact
 graphRouter.get('/api/graph/artifacts/:id/edges', async (req: Request, res: Response) => {
   try {

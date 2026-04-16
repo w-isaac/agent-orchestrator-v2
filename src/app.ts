@@ -14,6 +14,7 @@ import { promptBuilderRouter } from './routes/prompt-builder';
 import { adaptersRouter } from './routes/adapters';
 import { ingestionRouter } from './routes/ingestion';
 import { graphRouter } from './routes/graph';
+import { tasksRouter } from './routes/tasks';
 import { v2Router } from './api/v2';
 
 const app = express();
@@ -32,6 +33,7 @@ app.use(promptBuilderRouter);
 app.use(adaptersRouter);
 app.use(ingestionRouter);
 app.use(graphRouter);
+app.use(tasksRouter);
 app.use(v2Router);
 
 // Static file serving: prefer built SPA in client/dist/, fall back to client/ scaffold

@@ -16,6 +16,7 @@ import { ingestionRouter } from './routes/ingestion';
 import { graphRouter } from './routes/graph';
 import { tasksRouter } from './routes/tasks';
 import { v2Router } from './api/v2';
+import { tasksRouter } from './api/tasks';
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use(ingestionRouter);
 app.use(graphRouter);
 app.use(tasksRouter);
 app.use(v2Router);
+app.use(tasksRouter);
 
 // Static file serving: prefer built SPA in client/dist/, fall back to client/ scaffold
 const clientDir = join(__dirname, '../client');

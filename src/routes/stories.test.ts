@@ -333,6 +333,173 @@ describe('PATCH /api/stories/:id/budget-limit', () => {
   });
 });
 
+describe('POST /api/stories/:id/artifacts/auto-pack', () => {
+  let mockPool: { query: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPool = { query: vi.fn() };
+    mockedGetPool.mockReturnValue(mockPool as any);
+  });
+
+  it('selects artifacts by ratio (relevance_score/token_count) descending', async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'a1', token_count: '1000', relevance_score: '0.5' },  // ratio 0.0005
+        { id: 'a2', token_count: '500', relevance_score: '0.9' },   // ratio 0.0018
+        { id: 'a3', token_count: '2000', relevance_score: '0.6' },  // ratio 0.0003
+      ],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 1500 });
+
+    expect(res.status).toBe(200);
+    // a2 first (highest ratio), then a1 (1500 total), a3 skipped
+    expect(res.body.selected_artifact_ids).toEqual(['a2', 'a1']);
+    expect(res.body.total_tokens).toBe(1500);
+    expect(res.body.budget).toBe(1500);
+    expect(res.body.artifact_count).toBe(2);
+  });
+
+  it('returns empty selection for empty artifact list (story exists)', async () => {
+    // No active artifacts
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    // Story exists check (superseded artifacts exist)
+    mockPool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 8000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.selected_artifact_ids).toEqual([]);
+    expect(res.body.total_tokens).toBe(0);
+    expect(res.body.artifact_count).toBe(0);
+  });
+
+  it('selects all artifacts when budget is large enough', async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'a1', token_count: '1000', relevance_score: '0.5' },
+        { id: 'a2', token_count: '2000', relevance_score: '0.8' },
+      ],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 100000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.artifact_count).toBe(2);
+    expect(res.body.total_tokens).toBe(3000);
+  });
+
+  it('selects no artifacts when none fit within budget', async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'a1', token_count: '5000', relevance_score: '0.9' },
+        { id: 'a2', token_count: '3000', relevance_score: '0.8' },
+      ],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 100 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.selected_artifact_ids).toEqual([]);
+    expect(res.body.total_tokens).toBe(0);
+    expect(res.body.artifact_count).toBe(0);
+  });
+
+  it('skips artifacts with zero token_count', async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'a1', token_count: '0', relevance_score: '0.9' },
+        { id: 'a2', token_count: '500', relevance_score: '0.5' },
+      ],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 1000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.selected_artifact_ids).toEqual(['a2']);
+    expect(res.body.artifact_count).toBe(1);
+  });
+
+  it('returns 400 for missing budget', async () => {
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('budget');
+  });
+
+  it('returns 400 for non-integer budget', async () => {
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 3.5 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for negative budget', async () => {
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: -100 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when story not found', async () => {
+    // No active artifacts
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    // No artifacts at all
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(createApp())
+      .post('/api/stories/nonexistent/artifacts/auto-pack')
+      .send({ budget: 8000 });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('not found');
+  });
+
+  it('handles equal ratios correctly', async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'a1', token_count: '1000', relevance_score: '0.5' },  // ratio 0.0005
+        { id: 'a2', token_count: '2000', relevance_score: '1.0' },  // ratio 0.0005
+      ],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/artifacts/auto-pack')
+      .send({ budget: 1000 });
+
+    expect(res.status).toBe(200);
+    // Only 1000 budget: should select a1 (first in sort order)
+    expect(res.body.artifact_count).toBe(1);
+    expect(res.body.total_tokens).toBe(1000);
+  });
+
+  it('returns 500 on database error', async () => {
+    mockPool.query.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(createApp())
+      .post('/api/stories/story-err/artifacts/auto-pack')
+      .send({ budget: 8000 });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('DB error');
+  });
+});
+
 describe('GET /api/stories/:id/context-preview (budget_limit)', () => {
   let mockPool: { query: ReturnType<typeof vi.fn> };
 

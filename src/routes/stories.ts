@@ -88,6 +88,82 @@ storiesRouter.patch('/api/stories/:id/budget-limit', async (req: Request, res: R
   }
 });
 
+/** POST /api/stories/:id/artifacts/auto-pack — greedy knapsack artifact selection */
+storiesRouter.post('/api/stories/:id/artifacts/auto-pack', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const storyId = req.params.id;
+    const { budget } = req.body;
+
+    // Validate budget
+    if (budget === undefined || budget === null || typeof budget !== 'number' || !Number.isInteger(budget) || budget <= 0) {
+      res.status(400).json({ error: 'budget must be a positive integer' });
+      return;
+    }
+
+    // Fetch non-superseded artifacts for story
+    const { rows: artifacts } = await pool.query(
+      `SELECT id, token_count_full AS token_count, relevance_score
+       FROM context_artifacts
+       WHERE story_id = $1 AND superseded = 0`,
+      [storyId],
+    );
+
+    if (artifacts.length === 0) {
+      // Check if story exists at all by checking any artifacts (including superseded)
+      const { rows: anyArtifacts } = await pool.query(
+        'SELECT 1 FROM context_artifacts WHERE story_id = $1 LIMIT 1',
+        [storyId],
+      );
+      if (anyArtifacts.length === 0) {
+        res.status(404).json({ error: 'Story not found' });
+        return;
+      }
+      // Story exists but no active artifacts
+      res.json({
+        selected_artifact_ids: [],
+        total_tokens: 0,
+        budget,
+        artifact_count: 0,
+      });
+      return;
+    }
+
+    // Compute ratio and sort descending; skip artifacts with token_count = 0
+    const withRatio = artifacts
+      .map((a: any) => ({
+        id: a.id,
+        token_count: parseInt(a.token_count, 10) || 0,
+        relevance_score: parseFloat(a.relevance_score) || 0,
+      }))
+      .filter((a: any) => a.token_count > 0)
+      .map((a: any) => ({
+        ...a,
+        ratio: a.relevance_score / a.token_count,
+      }))
+      .sort((a: any, b: any) => b.ratio - a.ratio);
+
+    // Greedy selection
+    const selected: string[] = [];
+    let totalTokens = 0;
+    for (const artifact of withRatio) {
+      if (totalTokens + artifact.token_count <= budget) {
+        selected.push(artifact.id);
+        totalTokens += artifact.token_count;
+      }
+    }
+
+    res.json({
+      selected_artifact_ids: selected,
+      total_tokens: totalTokens,
+      budget,
+      artifact_count: selected.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 /** POST /api/stories/:id/dispatch — dispatch story with selected artifacts */
 storiesRouter.post('/api/stories/:id/dispatch', async (req: Request, res: Response) => {
   try {

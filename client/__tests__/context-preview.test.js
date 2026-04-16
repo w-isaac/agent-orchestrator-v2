@@ -50,33 +50,36 @@ describe('context-preview helpers', () => {
   });
 
   describe('greedyKnapsack', () => {
-    const artifacts = [
-      { id: 'a1', token_count: 2000 },
-      { id: 'a2', token_count: 1500 },
-      { id: 'a3', token_count: 1000 },
-      { id: 'a4', token_count: 500 },
-    ];
-
-    it('selects largest-first artifacts that fit within budget', () => {
-      const selected = greedyKnapsack(artifacts, 3000);
-      expect(selected.has('a1')).toBe(true);  // 2000 fits
-      expect(selected.has('a2')).toBe(false);  // 2000+1500=3500 > 3000
-      expect(selected.has('a3')).toBe(true);  // 2000+1000=3000 fits
-      expect(selected.has('a4')).toBe(false);  // no room left
+    it('sorts by relevance_score/token_count ratio descending and greedily selects', () => {
+      const arts = [
+        { id: 'a1', token_count: 1000, relevance_score: 0.5 },  // ratio 0.0005
+        { id: 'a2', token_count: 500, relevance_score: 0.9 },   // ratio 0.0018
+        { id: 'a3', token_count: 2000, relevance_score: 0.6 },  // ratio 0.0003
+      ];
+      // Budget 1500: picks a2 first (ratio highest, 500 tokens), then a1 (1000 tokens), skips a3
+      const selected = greedyKnapsack(arts, 1500);
+      expect(selected.has('a2')).toBe(true);
+      expect(selected.has('a1')).toBe(true);
+      expect(selected.has('a3')).toBe(false);
     });
 
     it('selects all artifacts if budget is large enough', () => {
-      const selected = greedyKnapsack(artifacts, 10000);
-      expect(selected.size).toBe(4);
+      const arts = [
+        { id: 'a1', token_count: 2000, relevance_score: 0.5 },
+        { id: 'a2', token_count: 1500, relevance_score: 0.7 },
+        { id: 'a3', token_count: 1000, relevance_score: 0.3 },
+      ];
+      const selected = greedyKnapsack(arts, 10000);
+      expect(selected.size).toBe(3);
     });
 
     it('returns empty set for zero budget', () => {
-      const selected = greedyKnapsack(artifacts, 0);
+      const selected = greedyKnapsack([{ id: 'a1', token_count: 100, relevance_score: 0.5 }], 0);
       expect(selected.size).toBe(0);
     });
 
     it('returns empty set for negative budget', () => {
-      const selected = greedyKnapsack(artifacts, -100);
+      const selected = greedyKnapsack([{ id: 'a1', token_count: 100, relevance_score: 0.5 }], -100);
       expect(selected.size).toBe(0);
     });
 
@@ -85,37 +88,62 @@ describe('context-preview helpers', () => {
       expect(selected.size).toBe(0);
     });
 
-    it('handles artifacts with zero token_count', () => {
+    it('skips artifacts with zero token_count', () => {
       const arts = [
-        { id: 'z1', token_count: 0 },
-        { id: 'z2', token_count: 500 },
+        { id: 'z1', token_count: 0, relevance_score: 0.9 },
+        { id: 'z2', token_count: 500, relevance_score: 0.5 },
       ];
-      const selected = greedyKnapsack(arts, 500);
-      expect(selected.has('z1')).toBe(true);
+      const selected = greedyKnapsack(arts, 1000);
+      expect(selected.has('z1')).toBe(false);  // zero-token skipped
       expect(selected.has('z2')).toBe(true);
     });
 
-    it('handles artifacts with null token_count', () => {
+    it('skips artifacts with null token_count', () => {
       const arts = [
-        { id: 'n1', token_count: null },
-        { id: 'n2', token_count: 1000 },
+        { id: 'n1', token_count: null, relevance_score: 0.9 },
+        { id: 'n2', token_count: 1000, relevance_score: 0.5 },
       ];
       const selected = greedyKnapsack(arts, 1000);
-      expect(selected.has('n1')).toBe(true);  // null treated as 0
+      expect(selected.has('n1')).toBe(false);  // null token_count skipped
       expect(selected.has('n2')).toBe(true);
     });
 
-    it('sorts by token_count descending (largest first)', () => {
+    it('selects no artifacts when none fit within budget', () => {
       const arts = [
-        { id: 's1', token_count: 100 },
-        { id: 's2', token_count: 900 },
-        { id: 's3', token_count: 500 },
+        { id: 'a1', token_count: 5000, relevance_score: 0.9 },
+        { id: 'a2', token_count: 3000, relevance_score: 0.8 },
       ];
-      // Budget 1000: picks 900 first, then 100 (total 1000), skips 500
-      const selected = greedyKnapsack(arts, 1000);
-      expect(selected.has('s2')).toBe(true);
-      expect(selected.has('s1')).toBe(true);
-      expect(selected.has('s3')).toBe(false);
+      const selected = greedyKnapsack(arts, 100);
+      expect(selected.size).toBe(0);
+    });
+
+    it('handles equal ratios with stable index-based tiebreaker', () => {
+      const arts = [
+        { id: 'e1', token_count: 1000, relevance_score: 0.5 },  // ratio 0.0005
+        { id: 'e2', token_count: 2000, relevance_score: 1.0 },  // ratio 0.0005 (same)
+        { id: 'e3', token_count: 500, relevance_score: 0.25 },  // ratio 0.0005 (same)
+      ];
+      // All same ratio — stable sort by original index, budget 1500: picks e1 (1000) then e3 (500)
+      const selected = greedyKnapsack(arts, 1500);
+      expect(selected.has('e1')).toBe(true);
+      expect(selected.has('e3')).toBe(true);
+      expect(selected.has('e2')).toBe(false); // 2000 would exceed 1500 remaining
+    });
+
+    it('handles various budget sizes correctly', () => {
+      const arts = [
+        { id: 'v1', token_count: 100, relevance_score: 0.9 },  // ratio 0.009
+        { id: 'v2', token_count: 200, relevance_score: 0.8 },  // ratio 0.004
+        { id: 'v3', token_count: 300, relevance_score: 0.6 },  // ratio 0.002
+      ];
+      // Budget 100: only v1
+      expect(greedyKnapsack(arts, 100).size).toBe(1);
+      // Budget 300: v1 + v2
+      const sel300 = greedyKnapsack(arts, 300);
+      expect(sel300.has('v1')).toBe(true);
+      expect(sel300.has('v2')).toBe(true);
+      // Budget 600: all three
+      expect(greedyKnapsack(arts, 600).size).toBe(3);
     });
   });
 
@@ -284,14 +312,17 @@ describe('context-preview helpers', () => {
 
     describe('knapsack updates budget correctly after toggle', () => {
       it('auto-pack respects budget and only selects fitting artifacts', () => {
-        const selected = greedyKnapsack(artifacts, 8000);
+        // Need relevance_score for ratio-based knapsack
+        const artsWithScore = [
+          { id: 'a1', token_count: 5000, relevance_score: 0.8 },
+          { id: 'a2', token_count: 3000, relevance_score: 0.9 },
+          { id: 'a3', token_count: 2000, relevance_score: 0.5 },
+        ];
+        const selected = greedyKnapsack(artsWithScore, 8000);
         const toggleState = {};
-        artifacts.forEach((a) => { toggleState[a.id] = selected.has(a.id); });
-        const total = computeSelectedTokens(artifacts, toggleState);
+        artsWithScore.forEach((a) => { toggleState[a.id] = selected.has(a.id); });
+        const total = computeSelectedTokens(artsWithScore, toggleState);
         expect(total).toBeLessThanOrEqual(8000);
-        expect(selected.has('a1')).toBe(true); // 5000
-        expect(selected.has('a2')).toBe(true); // 5000+3000=8000
-        expect(selected.has('a3')).toBe(false); // would exceed
       });
     });
   });

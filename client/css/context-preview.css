@@ -224,6 +224,22 @@
   color: var(--text-muted, #6b7280);
 }
 
+.btn-auto-pack {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.btn-auto-pack:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-auto-pack.packing {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
 .auto-pack-indicator {
   font-size: 0.75rem;
   color: #10b981;

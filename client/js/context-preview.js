@@ -19,25 +19,31 @@ function formatRelevance(score) {
 }
 
 /**
- * Greedy knapsack: sort artifacts by token_count descending, greedily include until budget exhausted.
+ * Greedy knapsack: sort artifacts by relevance_score/token_count ratio descending,
+ * greedily include until budget exhausted. Artifacts with token_count=0 are skipped.
  * Returns Set of artifact IDs that fit within the budget.
  */
 function greedyKnapsack(artifacts, budget) {
   if (budget <= 0) return new Set();
-  // Sort by token_count descending (stable sort by original index as tiebreaker)
+  // Compute ratio = relevance_score / token_count; skip zero-token artifacts
   var sorted = artifacts
-    .map(function (a, i) { return { artifact: a, index: i }; })
+    .map(function (a, i) {
+      var tokens = a.token_count || 0;
+      var score = a.relevance_score || 0;
+      var ratio = tokens > 0 ? score / tokens : 0;
+      return { artifact: a, index: i, ratio: ratio, tokens: tokens };
+    })
+    .filter(function (x) { return x.tokens > 0; })
     .sort(function (x, y) {
-      var diff = (y.artifact.token_count || 0) - (x.artifact.token_count || 0);
+      var diff = y.ratio - x.ratio;
       return diff !== 0 ? diff : x.index - y.index;
     });
   var selected = new Set();
   var remaining = budget;
   for (var i = 0; i < sorted.length; i++) {
-    var tokens = sorted[i].artifact.token_count || 0;
-    if (tokens <= remaining) {
+    if (sorted[i].tokens <= remaining) {
       selected.add(sorted[i].artifact.id);
-      remaining -= tokens;
+      remaining -= sorted[i].tokens;
     }
   }
   return selected;
@@ -98,6 +104,7 @@ if (typeof module !== 'undefined' && module.exports) {
     var retryBtn = document.getElementById('retry-btn');
 
     // Budget controls
+    var autoPackBtn = document.getElementById('auto-pack-btn');
     var budgetInput = document.getElementById('budget-input');
     var budgetInputError = document.getElementById('budget-input-error');
     var autoPackIndicator = document.getElementById('auto-pack-indicator');
@@ -260,11 +267,62 @@ if (typeof module !== 'undefined' && module.exports) {
       });
     }
 
+    function updateAutoPackBtn() {
+      var budget = parseBudget();
+      var hasArtifacts = currentArtifacts.length > 0;
+      autoPackBtn.disabled = !hasArtifacts || budget === null || budget === -1;
+    }
+
+    function handleAutoPackClick() {
+      var budget = parseBudget();
+      if (budget === null || budget === -1 || currentArtifacts.length === 0) return;
+
+      var storyId = storyInput.value.trim();
+      if (!storyId) return;
+
+      // Set packing state
+      autoPackBtn.disabled = true;
+      autoPackBtn.textContent = 'Packing\u2026';
+      autoPackBtn.classList.add('packing');
+
+      fetch('/api/stories/' + encodeURIComponent(storyId) + '/artifacts/auto-pack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budget: budget }),
+      })
+        .then(function (res) {
+          if (!res.ok) return res.json().then(function (d) { throw new Error(d.error || 'Auto-pack failed'); });
+          return res.json();
+        })
+        .then(function (data) {
+          var selectedSet = new Set(data.selected_artifact_ids);
+          currentArtifacts.forEach(function (a) {
+            toggleState[a.id] = selectedSet.has(a.id);
+          });
+          autoPackIndicator.style.display = '';
+          rerenderList();
+          updateBudgetBar();
+          updateSummary();
+        })
+        .catch(function (err) {
+          showError(err.message);
+          // Fallback to client-side knapsack
+          runAutoPack();
+        })
+        .finally(function () {
+          autoPackBtn.textContent = 'Auto-Pack';
+          autoPackBtn.classList.remove('packing');
+          updateAutoPackBtn();
+        });
+    }
+
     function renderArtifacts(data) {
       currentArtifacts = data.artifacts;
       // Initialize all as selected
       toggleState = {};
       currentArtifacts.forEach(function (a) { toggleState[a.id] = true; });
+
+      updateAutoPackBtn();
 
       // If budget is set, run auto-pack
       var budget = parseBudget();
@@ -380,12 +438,14 @@ if (typeof module !== 'undefined' && module.exports) {
 
     // Budget input with 300ms debounce
     budgetInput.addEventListener('input', function () {
+      updateAutoPackBtn();
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(function () {
         runAutoPack();
       }, 300);
     });
 
+    autoPackBtn.addEventListener('click', handleAutoPackClick);
     dispatchBtn.addEventListener('click', dispatchSelected);
   })();
 }

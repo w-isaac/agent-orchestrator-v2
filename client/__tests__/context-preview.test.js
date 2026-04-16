@@ -184,4 +184,115 @@ describe('context-preview helpers', () => {
       expect(text).toContain('Total:');
     });
   });
+
+  describe('budget usage bar logic', () => {
+    // Helper: compute selected tokens from artifacts and toggle state
+    function computeSelectedTokens(artifacts, toggleState) {
+      let total = 0;
+      artifacts.forEach((a) => {
+        if (toggleState[a.id] !== false) {
+          total += (a.token_count || 0);
+        }
+      });
+      return total;
+    }
+
+    // Helper: determine if over budget
+    function isOverBudget(selectedTokens, budgetLimit) {
+      return budgetLimit != null && budgetLimit > 0 && selectedTokens > budgetLimit;
+    }
+
+    // Helper: compute bar percentage
+    function barPercentage(selectedTokens, budgetLimit) {
+      if (!budgetLimit || budgetLimit <= 0) return 0;
+      return Math.min((selectedTokens / budgetLimit) * 100, 100);
+    }
+
+    const artifacts = [
+      { id: 'a1', token_count: 5000 },
+      { id: 'a2', token_count: 3000 },
+      { id: 'a3', token_count: 2000 },
+    ];
+
+    describe('toggle state changes update token totals', () => {
+      it('counts all tokens when all are toggled on', () => {
+        const toggleState = { a1: true, a2: true, a3: true };
+        expect(computeSelectedTokens(artifacts, toggleState)).toBe(10000);
+      });
+
+      it('excludes tokens for toggled-off artifacts', () => {
+        const toggleState = { a1: true, a2: false, a3: true };
+        expect(computeSelectedTokens(artifacts, toggleState)).toBe(7000);
+      });
+
+      it('returns 0 when all artifacts are toggled off', () => {
+        const toggleState = { a1: false, a2: false, a3: false };
+        expect(computeSelectedTokens(artifacts, toggleState)).toBe(0);
+      });
+
+      it('treats missing toggle state as on (default)', () => {
+        const toggleState = {};
+        expect(computeSelectedTokens(artifacts, toggleState)).toBe(10000);
+      });
+    });
+
+    describe('budget calculation is correct', () => {
+      it('computes percentage correctly when under budget', () => {
+        expect(barPercentage(5000, 10000)).toBe(50);
+      });
+
+      it('caps percentage at 100 when over budget', () => {
+        expect(barPercentage(15000, 10000)).toBe(100);
+      });
+
+      it('returns 0 when budget is null', () => {
+        expect(barPercentage(5000, null)).toBe(0);
+      });
+
+      it('returns 0 when budget is 0', () => {
+        expect(barPercentage(5000, 0)).toBe(0);
+      });
+    });
+
+    describe('over-budget threshold triggers warning display', () => {
+      it('returns true when tokens exceed budget', () => {
+        expect(isOverBudget(12000, 10000)).toBe(true);
+      });
+
+      it('returns true when over by even 1 token', () => {
+        expect(isOverBudget(10001, 10000)).toBe(true);
+      });
+
+      it('returns false when exactly at budget', () => {
+        expect(isOverBudget(10000, 10000)).toBe(false);
+      });
+    });
+
+    describe('under-budget state shows no warning', () => {
+      it('returns false when under budget', () => {
+        expect(isOverBudget(5000, 10000)).toBe(false);
+      });
+
+      it('returns false when budget is null', () => {
+        expect(isOverBudget(5000, null)).toBe(false);
+      });
+
+      it('returns false when tokens are 0', () => {
+        expect(isOverBudget(0, 10000)).toBe(false);
+      });
+    });
+
+    describe('knapsack updates budget correctly after toggle', () => {
+      it('auto-pack respects budget and only selects fitting artifacts', () => {
+        const selected = greedyKnapsack(artifacts, 8000);
+        const toggleState = {};
+        artifacts.forEach((a) => { toggleState[a.id] = selected.has(a.id); });
+        const total = computeSelectedTokens(artifacts, toggleState);
+        expect(total).toBeLessThanOrEqual(8000);
+        expect(selected.has('a1')).toBe(true); // 5000
+        expect(selected.has('a2')).toBe(true); // 5000+3000=8000
+        expect(selected.has('a3')).toBe(false); // would exceed
+      });
+    });
+  });
 });

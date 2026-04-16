@@ -168,13 +168,16 @@ if (typeof module !== 'undefined' && module.exports) {
       var used = getSelectedTokens();
       var pct = budgetVal > 0 ? Math.min((used / budgetVal) * 100, 100) : 0;
       budgetBarFill.style.width = pct + '%';
-      budgetUsedLabel.textContent = 'Used: ' + formatNumber(used) + ' tokens';
-      budgetLimitLabel.textContent = 'Budget: ' + formatNumber(budgetVal) + ' tokens';
+      budgetBarFill.setAttribute('aria-valuenow', String(used));
+      budgetBarFill.setAttribute('aria-valuemax', String(budgetVal));
+      budgetBarFill.setAttribute('aria-label', 'Budget usage: ' + Math.round(pct) + '%');
+      budgetUsedLabel.textContent = formatNumber(used) + ' / ' + formatNumber(budgetVal) + ' tokens';
+      budgetLimitLabel.textContent = '';
 
       if (used > budgetVal) {
         budgetBarFill.classList.add('over-budget');
         budgetWarning.style.display = '';
-        budgetWarningText.textContent = 'Over budget by ' + formatNumber(used - budgetVal) + ' tokens';
+        budgetWarningText.textContent = 'Over budget \u2014 deselect artifacts to reduce context size';
       } else {
         budgetBarFill.classList.remove('over-budget');
         budgetWarning.style.display = 'none';

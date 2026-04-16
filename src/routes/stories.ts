@@ -18,16 +18,18 @@ storiesRouter.get('/api/stories/:id/context-preview', async (req: Request, res: 
       [storyId],
     );
 
+    // Fetch budget_limit for this story
+    const { rows: budgetRows } = await pool.query(
+      'SELECT budget_limit FROM story_budgets WHERE story_id = $1',
+      [storyId],
+    );
+    const budgetLimit = budgetRows.length > 0 ? budgetRows[0].budget_limit : null;
+
     if (artifacts.length === 0) {
-      // Check if story has any artifacts at all (including superseded)
-      const { rows: anyArtifacts } = await pool.query(
-        'SELECT 1 FROM context_artifacts WHERE story_id = $1 LIMIT 1',
-        [storyId],
-      );
-      // Return empty list regardless — story may simply have no artifacts
       res.json({
         artifacts: [],
         summary: { artifact_count: 0, total_tokens: 0 },
+        budget_limit: budgetLimit,
       });
       return;
     }
@@ -50,7 +52,37 @@ storiesRouter.get('/api/stories/:id/context-preview', async (req: Request, res: 
         artifact_count: artifacts.length,
         total_tokens: totalTokens,
       },
+      budget_limit: budgetLimit,
     });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** PATCH /api/stories/:id/budget-limit — set or update token budget for a story */
+storiesRouter.patch('/api/stories/:id/budget-limit', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const storyId = req.params.id;
+    const { budget_limit } = req.body;
+
+    // Validate: must be a positive integer or null
+    if (budget_limit !== null && budget_limit !== undefined) {
+      if (typeof budget_limit !== 'number' || !Number.isInteger(budget_limit) || budget_limit <= 0) {
+        res.status(400).json({ error: 'budget_limit must be a positive integer or null' });
+        return;
+      }
+    }
+
+    // Upsert into story_budgets
+    await pool.query(
+      `INSERT INTO story_budgets (story_id, budget_limit, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (story_id) DO UPDATE SET budget_limit = $2, updated_at = NOW()`,
+      [storyId, budget_limit ?? null],
+    );
+
+    res.json({ story_id: storyId, budget_limit: budget_limit ?? null });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

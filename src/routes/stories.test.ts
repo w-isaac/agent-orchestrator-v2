@@ -28,26 +28,28 @@ describe('GET /api/stories/:id/context-preview', () => {
   });
 
   it('returns artifacts with summary for a story', async () => {
-    mockPool.query.mockResolvedValueOnce({
-      rows: [
-        {
-          id: 'a1',
-          title: 'Design Spec',
-          type: 'design_doc',
-          token_count: 3420,
-          relevance_score: 0.92,
-          created_at: '2026-04-15T10:00:00Z',
-        },
-        {
-          id: 'a2',
-          title: 'API Schema',
-          type: 'api_spec',
-          token_count: 1500,
-          relevance_score: 0.85,
-          created_at: '2026-04-15T11:00:00Z',
-        },
-      ],
-    });
+    mockPool.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'a1',
+            title: 'Design Spec',
+            type: 'design_doc',
+            token_count: 3420,
+            relevance_score: 0.92,
+            created_at: '2026-04-15T10:00:00Z',
+          },
+          {
+            id: 'a2',
+            title: 'API Schema',
+            type: 'api_spec',
+            token_count: 1500,
+            relevance_score: 0.85,
+            created_at: '2026-04-15T11:00:00Z',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] }); // budget query
 
     const res = await request(createApp()).get('/api/stories/story-1/context-preview');
 
@@ -65,6 +67,7 @@ describe('GET /api/stories/:id/context-preview', () => {
       artifact_count: 2,
       total_tokens: 4920,
     });
+    expect(res.body.budget_limit).toBeNull();
 
     // Verify query uses superseded = 0
     expect(mockPool.query).toHaveBeenCalledWith(
@@ -75,8 +78,8 @@ describe('GET /api/stories/:id/context-preview', () => {
 
   it('returns empty list when no active artifacts exist', async () => {
     mockPool.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] })   // artifacts
+      .mockResolvedValueOnce({ rows: [] });  // budget
 
     const res = await request(createApp()).get('/api/stories/story-2/context-preview');
 
@@ -86,21 +89,24 @@ describe('GET /api/stories/:id/context-preview', () => {
       artifact_count: 0,
       total_tokens: 0,
     });
+    expect(res.body.budget_limit).toBeNull();
   });
 
   it('handles null relevance_score gracefully', async () => {
-    mockPool.query.mockResolvedValueOnce({
-      rows: [
-        {
-          id: 'a3',
-          title: 'Raw notes',
-          type: null,
-          token_count: 200,
-          relevance_score: null,
-          created_at: '2026-04-15T12:00:00Z',
-        },
-      ],
-    });
+    mockPool.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'a3',
+            title: 'Raw notes',
+            type: null,
+            token_count: 200,
+            relevance_score: null,
+            created_at: '2026-04-15T12:00:00Z',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] }); // budget
 
     const res = await request(createApp()).get('/api/stories/story-3/context-preview');
 
@@ -119,8 +125,9 @@ describe('GET /api/stories/:id/context-preview', () => {
   });
 
   it('orders by relevance_score DESC, created_at ASC', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [] });
-    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [] })   // artifacts
+      .mockResolvedValueOnce({ rows: [] });  // budget
 
     await request(createApp()).get('/api/stories/story-4/context-preview');
 
@@ -240,5 +247,123 @@ describe('POST /api/stories/:id/dispatch', () => {
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('DB down');
+  });
+});
+
+describe('PATCH /api/stories/:id/budget-limit', () => {
+  let mockPool: { query: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPool = { query: vi.fn() };
+    mockedGetPool.mockReturnValue(mockPool as any);
+  });
+
+  it('sets budget_limit and returns story_id with value', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(createApp())
+      .patch('/api/stories/story-1/budget-limit')
+      .send({ budget_limit: 20000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      story_id: 'story-1',
+      budget_limit: 20000,
+    });
+    expect(mockPool.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO story_budgets'),
+      ['story-1', 20000],
+    );
+  });
+
+  it('clears budget_limit when null is sent', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(createApp())
+      .patch('/api/stories/story-1/budget-limit')
+      .send({ budget_limit: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body.budget_limit).toBeNull();
+  });
+
+  it('returns 400 for non-integer budget_limit', async () => {
+    const res = await request(createApp())
+      .patch('/api/stories/story-1/budget-limit')
+      .send({ budget_limit: 3.5 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('positive integer');
+  });
+
+  it('returns 400 for negative budget_limit', async () => {
+    const res = await request(createApp())
+      .patch('/api/stories/story-1/budget-limit')
+      .send({ budget_limit: -100 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for zero budget_limit', async () => {
+    const res = await request(createApp())
+      .patch('/api/stories/story-1/budget-limit')
+      .send({ budget_limit: 0 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for string budget_limit', async () => {
+    const res = await request(createApp())
+      .patch('/api/stories/story-1/budget-limit')
+      .send({ budget_limit: 'abc' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 on database error', async () => {
+    mockPool.query.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(createApp())
+      .patch('/api/stories/story-err/budget-limit')
+      .send({ budget_limit: 5000 });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('DB error');
+  });
+});
+
+describe('GET /api/stories/:id/context-preview (budget_limit)', () => {
+  let mockPool: { query: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPool = { query: vi.fn() };
+    mockedGetPool.mockReturnValue(mockPool as any);
+  });
+
+  it('includes budget_limit in response when set', async () => {
+    mockPool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'a1', title: 'Test', type: 'doc', token_count: 1000, relevance_score: 0.9, created_at: '2026-04-16T00:00:00Z' }],
+      })
+      .mockResolvedValueOnce({ rows: [{ budget_limit: 20000 }] });
+
+    const res = await request(createApp()).get('/api/stories/story-1/context-preview');
+
+    expect(res.status).toBe(200);
+    expect(res.body.budget_limit).toBe(20000);
+  });
+
+  it('returns budget_limit as null when not set', async () => {
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [] })  // artifacts query
+      .mockResolvedValueOnce({ rows: [] })  // budget query
+      .mockResolvedValueOnce({ rows: [] }); // any artifacts check
+
+    const res = await request(createApp()).get('/api/stories/story-2/context-preview');
+
+    expect(res.status).toBe(200);
+    expect(res.body.budget_limit).toBeNull();
   });
 });

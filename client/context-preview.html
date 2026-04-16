@@ -48,11 +48,34 @@
           <h2 id="panel-title">Context Preview</h2>
           <button class="btn-icon" id="panel-close" aria-label="Close preview">&times;</button>
         </div>
+        <div class="budget-controls" id="budget-controls">
+          <label for="budget-input" class="budget-label">Token Budget</label>
+          <div class="budget-input-row">
+            <input type="text" id="budget-input" placeholder="e.g. 4096" aria-label="Token budget" inputmode="numeric">
+            <span class="budget-suffix">tokens</span>
+            <span class="auto-pack-indicator" id="auto-pack-indicator" style="display:none">&#x2713; Auto-packed</span>
+          </div>
+          <div class="budget-input-error" id="budget-input-error" style="display:none">Enter a positive token count</div>
+        </div>
+        <div class="budget-usage-bar-container" id="budget-bar-container" style="display:none">
+          <div class="budget-bar-labels">
+            <span id="budget-used-label">Used: 0 tokens</span>
+            <span id="budget-limit-label">Budget: 0 tokens</span>
+          </div>
+          <div class="budget-bar-track">
+            <div class="budget-bar-fill" id="budget-bar-fill" style="width:0%"></div>
+          </div>
+          <div class="budget-warning" id="budget-warning" style="display:none">
+            <span class="warning-icon">&#x26A0;</span>
+            <span id="budget-warning-text">Over budget</span>
+          </div>
+        </div>
         <div class="panel-body" id="panel-body">
           <!-- Skeleton / artifact list rendered here -->
         </div>
         <div class="panel-footer" id="panel-footer">
           <span id="summary-text">Total: 0 artifacts &middot; 0 tokens</span>
+          <button class="btn btn-primary" id="dispatch-context-btn">Dispatch</button>
         </div>
       </aside>
     </div>

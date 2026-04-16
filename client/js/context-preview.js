@@ -1,4 +1,4 @@
-/* Context Preview Panel — lazy-fetch artifact list for dispatch preview */
+/* Context Preview Panel — budget controls, artifact toggling, greedy knapsack auto-packing */
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -18,14 +18,42 @@ function formatRelevance(score) {
   return score.toFixed(2);
 }
 
-function buildArtifactHtml(artifacts) {
+/**
+ * Greedy knapsack: sort artifacts by token_count descending, greedily include until budget exhausted.
+ * Returns Set of artifact IDs that fit within the budget.
+ */
+function greedyKnapsack(artifacts, budget) {
+  if (budget <= 0) return new Set();
+  // Sort by token_count descending (stable sort by original index as tiebreaker)
+  var sorted = artifacts
+    .map(function (a, i) { return { artifact: a, index: i }; })
+    .sort(function (x, y) {
+      var diff = (y.artifact.token_count || 0) - (x.artifact.token_count || 0);
+      return diff !== 0 ? diff : x.index - y.index;
+    });
+  var selected = new Set();
+  var remaining = budget;
+  for (var i = 0; i < sorted.length; i++) {
+    var tokens = sorted[i].artifact.token_count || 0;
+    if (tokens <= remaining) {
+      selected.add(sorted[i].artifact.id);
+      remaining -= tokens;
+    }
+  }
+  return selected;
+}
+
+function buildArtifactHtml(artifacts, toggleState) {
   if (artifacts.length === 0) {
     return '<div class="empty-state">No context artifacts found for this story.</div>';
   }
   var html = '';
   artifacts.forEach(function (a) {
+    var isOn = toggleState ? toggleState[a.id] !== false : true;
+    var disabledClass = isOn ? '' : ' disabled';
+    var checkedAttr = isOn ? ' checked' : '';
     html +=
-      '<div class="artifact-item">' +
+      '<div class="artifact-item' + disabledClass + '" data-artifact-id="' + escapeHtml(a.id) + '">' +
       '  <div class="artifact-info">' +
       '    <div class="artifact-title">' + escapeHtml(a.title) + '</div>' +
       '    <span class="artifact-type">' + escapeHtml(a.type) + '</span>' +
@@ -33,6 +61,10 @@ function buildArtifactHtml(artifacts) {
       '  <div class="artifact-metrics">' +
       '    <div class="artifact-tokens">' + formatNumber(a.token_count) + '</div>' +
       '    <div class="artifact-relevance">' + formatRelevance(a.relevance_score) + '</div>' +
+      '  </div>' +
+      '  <div class="artifact-toggle">' +
+      '    <input type="checkbox" data-id="' + escapeHtml(a.id) + '"' + checkedAttr +
+      '     aria-label="Include ' + escapeHtml(a.title) + '">' +
       '  </div>' +
       '</div>';
   });
@@ -50,7 +82,7 @@ function buildSummaryText(summary) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { escapeHtml, formatNumber, formatRelevance, buildArtifactHtml, buildSummaryText };
+  module.exports = { escapeHtml, formatNumber, formatRelevance, greedyKnapsack, buildArtifactHtml, buildSummaryText };
 } else {
   (function () {
     'use strict';
@@ -64,6 +96,22 @@ if (typeof module !== 'undefined' && module.exports) {
     var errorBanner = document.getElementById('error-banner');
     var errorMsg = document.getElementById('error-msg');
     var retryBtn = document.getElementById('retry-btn');
+
+    // Budget controls
+    var budgetInput = document.getElementById('budget-input');
+    var budgetInputError = document.getElementById('budget-input-error');
+    var autoPackIndicator = document.getElementById('auto-pack-indicator');
+    var budgetBarContainer = document.getElementById('budget-bar-container');
+    var budgetBarFill = document.getElementById('budget-bar-fill');
+    var budgetUsedLabel = document.getElementById('budget-used-label');
+    var budgetLimitLabel = document.getElementById('budget-limit-label');
+    var budgetWarning = document.getElementById('budget-warning');
+    var budgetWarningText = document.getElementById('budget-warning-text');
+    var dispatchBtn = document.getElementById('dispatch-context-btn');
+
+    var currentArtifacts = [];
+    var toggleState = {}; // { artifactId: true/false }
+    var debounceTimer = null;
 
     function showError(msg) {
       errorMsg.textContent = msg;
@@ -92,9 +140,138 @@ if (typeof module !== 'undefined' && module.exports) {
       summaryText.textContent = 'Loading...';
     }
 
+    function getSelectedTokens() {
+      var total = 0;
+      currentArtifacts.forEach(function (a) {
+        if (toggleState[a.id] !== false) {
+          total += (a.token_count || 0);
+        }
+      });
+      return total;
+    }
+
+    function getSelectedCount() {
+      var count = 0;
+      currentArtifacts.forEach(function (a) {
+        if (toggleState[a.id] !== false) count++;
+      });
+      return count;
+    }
+
+    function updateBudgetBar() {
+      var budgetVal = parseBudget();
+      if (budgetVal === null) {
+        budgetBarContainer.style.display = 'none';
+        return;
+      }
+      budgetBarContainer.style.display = '';
+      var used = getSelectedTokens();
+      var pct = budgetVal > 0 ? Math.min((used / budgetVal) * 100, 100) : 0;
+      budgetBarFill.style.width = pct + '%';
+      budgetUsedLabel.textContent = 'Used: ' + formatNumber(used) + ' tokens';
+      budgetLimitLabel.textContent = 'Budget: ' + formatNumber(budgetVal) + ' tokens';
+
+      if (used > budgetVal) {
+        budgetBarFill.classList.add('over-budget');
+        budgetWarning.style.display = '';
+        budgetWarningText.textContent = 'Over budget by ' + formatNumber(used - budgetVal) + ' tokens';
+      } else {
+        budgetBarFill.classList.remove('over-budget');
+        budgetWarning.style.display = 'none';
+      }
+    }
+
+    function updateSummary() {
+      var selected = getSelectedCount();
+      var tokens = getSelectedTokens();
+      summaryText.textContent =
+        'Selected: ' + selected + ' artifacts \u00b7 ' + formatNumber(tokens) + ' tokens';
+    }
+
+    function parseBudget() {
+      var raw = budgetInput.value.trim();
+      if (raw === '') return null;
+      var val = parseInt(raw, 10);
+      if (isNaN(val) || val <= 0) return -1; // invalid
+      return val;
+    }
+
+    function runAutoPack() {
+      var budget = parseBudget();
+      if (budget === null) {
+        // No budget set — show all as selected
+        budgetInput.classList.remove('invalid');
+        budgetInputError.style.display = 'none';
+        autoPackIndicator.style.display = 'none';
+        currentArtifacts.forEach(function (a) { toggleState[a.id] = true; });
+        rerenderList();
+        updateBudgetBar();
+        updateSummary();
+        return;
+      }
+      if (budget === -1) {
+        // Invalid
+        budgetInput.classList.add('invalid');
+        budgetInputError.style.display = '';
+        autoPackIndicator.style.display = 'none';
+        return;
+      }
+      budgetInput.classList.remove('invalid');
+      budgetInputError.style.display = 'none';
+
+      var selected = greedyKnapsack(currentArtifacts, budget);
+      currentArtifacts.forEach(function (a) {
+        toggleState[a.id] = selected.has(a.id);
+      });
+      autoPackIndicator.style.display = '';
+      rerenderList();
+      updateBudgetBar();
+      updateSummary();
+    }
+
+    function rerenderList() {
+      panelBody.innerHTML = buildArtifactHtml(currentArtifacts, toggleState);
+      attachToggleListeners();
+    }
+
+    function attachToggleListeners() {
+      var checkboxes = panelBody.querySelectorAll('input[type="checkbox"][data-id]');
+      checkboxes.forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          var id = cb.getAttribute('data-id');
+          toggleState[id] = cb.checked;
+          // Update visual state
+          var row = cb.closest('.artifact-item');
+          if (row) {
+            if (cb.checked) {
+              row.classList.remove('disabled');
+            } else {
+              row.classList.add('disabled');
+            }
+          }
+          // Hide auto-pack indicator since user manually toggled
+          autoPackIndicator.style.display = 'none';
+          updateBudgetBar();
+          updateSummary();
+        });
+      });
+    }
+
     function renderArtifacts(data) {
-      panelBody.innerHTML = buildArtifactHtml(data.artifacts);
-      summaryText.textContent = buildSummaryText(data.summary);
+      currentArtifacts = data.artifacts;
+      // Initialize all as selected
+      toggleState = {};
+      currentArtifacts.forEach(function (a) { toggleState[a.id] = true; });
+
+      // If budget is set, run auto-pack
+      var budget = parseBudget();
+      if (budget !== null && budget > 0) {
+        runAutoPack();
+      } else {
+        rerenderList();
+        updateBudgetBar();
+        updateSummary();
+      }
     }
 
     function openPanel() {
@@ -124,6 +301,57 @@ if (typeof module !== 'undefined' && module.exports) {
       panelBackdrop.style.display = 'none';
     }
 
+    function dispatchSelected() {
+      var storyId = storyInput.value.trim();
+      if (!storyId) return;
+
+      var selectedIds = [];
+      currentArtifacts.forEach(function (a) {
+        if (toggleState[a.id] !== false) {
+          selectedIds.push(a.id);
+        }
+      });
+
+      if (selectedIds.length === 0) {
+        showError('No artifacts selected for dispatch.');
+        return;
+      }
+
+      var body = { artifact_ids: selectedIds };
+      var budget = parseBudget();
+      if (budget !== null && budget > 0) {
+        body.token_budget = budget;
+      }
+
+      dispatchBtn.disabled = true;
+      dispatchBtn.textContent = 'Dispatching...';
+
+      fetch('/api/stories/' + encodeURIComponent(storyId) + '/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+        .then(function (res) {
+          if (!res.ok) return res.json().then(function (d) { throw new Error(d.error || 'Dispatch failed'); });
+          return res.json();
+        })
+        .then(function (data) {
+          summaryText.textContent =
+            'Dispatched ' + data.artifact_count + ' artifacts \u00b7 ' +
+            formatNumber(data.total_tokens) + ' tokens';
+          dispatchBtn.textContent = 'Dispatched!';
+          setTimeout(function () {
+            dispatchBtn.disabled = false;
+            dispatchBtn.textContent = 'Dispatch';
+          }, 2000);
+        })
+        .catch(function (err) {
+          showError(err.message);
+          dispatchBtn.disabled = false;
+          dispatchBtn.textContent = 'Dispatch';
+        });
+    }
+
     storyInput.addEventListener('input', function () {
       var hasValue = storyInput.value.trim().length > 0;
       previewBtn.disabled = !hasValue;
@@ -146,5 +374,15 @@ if (typeof module !== 'undefined' && module.exports) {
       hideError();
       openPanel();
     });
+
+    // Budget input with 300ms debounce
+    budgetInput.addEventListener('input', function () {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () {
+        runAutoPack();
+      }, 300);
+    });
+
+    dispatchBtn.addEventListener('click', dispatchSelected);
   })();
 }

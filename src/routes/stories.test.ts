@@ -127,3 +127,118 @@ describe('GET /api/stories/:id/context-preview', () => {
     expect(mockPool.query.mock.calls[0][0]).toContain('ORDER BY relevance_score DESC, created_at ASC');
   });
 });
+
+describe('POST /api/stories/:id/dispatch', () => {
+  let mockPool: { query: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPool = { query: vi.fn() };
+    mockedGetPool.mockReturnValue(mockPool as any);
+  });
+
+  it('dispatches with valid artifact_ids and returns summary', async () => {
+    // Story existence check
+    mockPool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+    // Artifact validation
+    mockPool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'a1', token_count: '2000' },
+        { id: 'a2', token_count: '1500' },
+      ],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/dispatch')
+      .send({ artifact_ids: ['a1', 'a2'], token_budget: 4096 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      story_id: 'story-1',
+      dispatched: true,
+      artifact_count: 2,
+      total_tokens: 3500,
+      token_budget: 4096,
+    });
+  });
+
+  it('returns 400 for empty artifact_ids', async () => {
+    const res = await request(createApp())
+      .post('/api/stories/story-1/dispatch')
+      .send({ artifact_ids: [] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('non-empty');
+  });
+
+  it('returns 400 for missing artifact_ids', async () => {
+    const res = await request(createApp())
+      .post('/api/stories/story-1/dispatch')
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when story has no artifacts', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(createApp())
+      .post('/api/stories/no-story/dispatch')
+      .send({ artifact_ids: ['a1'] });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('not found');
+  });
+
+  it('returns 422 when some artifact_ids are invalid or superseded', async () => {
+    // Story exists
+    mockPool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+    // Only a1 is valid, a2 is not found
+    mockPool.query.mockResolvedValueOnce({
+      rows: [{ id: 'a1', token_count: '1000' }],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/dispatch')
+      .send({ artifact_ids: ['a1', 'a2'] });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain('not found or superseded');
+    expect(res.body.invalid_ids).toEqual(['a2']);
+  });
+
+  it('returns 400 for invalid token_budget', async () => {
+    const res = await request(createApp())
+      .post('/api/stories/story-1/dispatch')
+      .send({ artifact_ids: ['a1'], token_budget: -100 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('positive');
+  });
+
+  it('dispatches without token_budget (optional)', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+    mockPool.query.mockResolvedValueOnce({
+      rows: [{ id: 'a1', token_count: '500' }],
+    });
+
+    const res = await request(createApp())
+      .post('/api/stories/story-1/dispatch')
+      .send({ artifact_ids: ['a1'] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.token_budget).toBeNull();
+    expect(res.body.total_tokens).toBe(500);
+  });
+
+  it('returns 500 on database error', async () => {
+    mockPool.query.mockRejectedValueOnce(new Error('DB down'));
+
+    const res = await request(createApp())
+      .post('/api/stories/story-err/dispatch')
+      .send({ artifact_ids: ['a1'] });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('DB down');
+  });
+});

@@ -55,3 +55,67 @@ storiesRouter.get('/api/stories/:id/context-preview', async (req: Request, res: 
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+/** POST /api/stories/:id/dispatch — dispatch story with selected artifacts */
+storiesRouter.post('/api/stories/:id/dispatch', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const storyId = req.params.id;
+    const { artifact_ids, token_budget } = req.body;
+
+    // Validate artifact_ids is a non-empty array
+    if (!Array.isArray(artifact_ids) || artifact_ids.length === 0) {
+      res.status(400).json({ error: 'artifact_ids must be a non-empty array' });
+      return;
+    }
+
+    // Validate token_budget is a positive number if provided
+    if (token_budget !== undefined && (typeof token_budget !== 'number' || token_budget <= 0)) {
+      res.status(400).json({ error: 'token_budget must be a positive number' });
+      return;
+    }
+
+    // Check story has artifacts (acts as story existence check)
+    const { rows: storyCheck } = await pool.query(
+      'SELECT 1 FROM context_artifacts WHERE story_id = $1 LIMIT 1',
+      [storyId],
+    );
+    if (storyCheck.length === 0) {
+      res.status(404).json({ error: 'Story not found' });
+      return;
+    }
+
+    // Validate all artifact_ids belong to this story and are not superseded
+    const { rows: validArtifacts } = await pool.query(
+      `SELECT id, token_count_full AS token_count
+       FROM context_artifacts
+       WHERE story_id = $1 AND id = ANY($2) AND superseded = 0`,
+      [storyId, artifact_ids],
+    );
+
+    const validIds = new Set(validArtifacts.map((a: any) => a.id));
+    const invalidIds = artifact_ids.filter((id: string) => !validIds.has(id));
+    if (invalidIds.length > 0) {
+      res.status(422).json({
+        error: 'One or more artifact IDs not found or superseded',
+        invalid_ids: invalidIds,
+      });
+      return;
+    }
+
+    const totalTokens = validArtifacts.reduce(
+      (sum: number, a: any) => sum + (parseInt(a.token_count, 10) || 0),
+      0,
+    );
+
+    res.json({
+      story_id: storyId,
+      dispatched: true,
+      artifact_count: validArtifacts.length,
+      total_tokens: totalTokens,
+      token_budget: token_budget || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});

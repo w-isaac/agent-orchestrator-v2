@@ -13,3 +13,4 @@ export { ingestionRouter } from './ingestion';
 export { graphRouter } from './graph';
 export { tasksRouter } from './tasks';
 export { storiesRouter } from './stories';
+export { contextGraphRouter } from './context-graph';

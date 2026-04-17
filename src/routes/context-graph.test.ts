@@ -195,4 +195,183 @@ describe('context-graph API', () => {
       expect(res.body.cascaded_edges).toBe(0);
     });
   });
+
+  // ─── Edge CRUD ─────────────────────────────────────────────────────────────
+
+  const EDGE_ID = '33333333-3333-3333-3333-333333333333';
+  const SOURCE_NODE = '44444444-4444-4444-4444-444444444444';
+  const TARGET_NODE = '55555555-5555-5555-5555-555555555555';
+
+  describe('POST /api/context-graph/:projectId/edges', () => {
+    it('creates edge and returns 201', async () => {
+      const createdEdge = {
+        id: EDGE_ID,
+        project_id: PROJECT_ID,
+        source_node_id: SOURCE_NODE,
+        target_node_id: TARGET_NODE,
+        label: 'depends_on',
+        type: 'dependency',
+        properties: '{}',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: SOURCE_NODE }] }) // source exists
+        .mockResolvedValueOnce({ rows: [{ id: TARGET_NODE }] }) // target exists
+        .mockResolvedValueOnce({ rows: [] }) // no duplicate
+        .mockResolvedValueOnce({ rows: [createdEdge] }); // INSERT
+
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/edges`)
+        .send({ source_node_id: SOURCE_NODE, target_node_id: TARGET_NODE, label: 'depends_on', type: 'dependency' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe(EDGE_ID);
+      expect(mockedBroadcast).toHaveBeenCalledWith({
+        type: 'graph_edge_created',
+        project_id: PROJECT_ID,
+        edge: createdEdge,
+      });
+    });
+
+    it('returns 400 when required fields missing', async () => {
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/edges`)
+        .send({ source_node_id: SOURCE_NODE });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 422 when source equals target', async () => {
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/edges`)
+        .send({ source_node_id: SOURCE_NODE, target_node_id: SOURCE_NODE, label: 'x', type: 'y' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe('Source and target must be different nodes');
+    });
+
+    it('returns 422 when source node not found', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] }); // source not found
+
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/edges`)
+        .send({ source_node_id: SOURCE_NODE, target_node_id: TARGET_NODE, label: 'x', type: 'y' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe('Source node not found in this project');
+    });
+
+    it('returns 422 when target node not found', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: SOURCE_NODE }] }) // source exists
+        .mockResolvedValueOnce({ rows: [] }); // target not found
+
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/edges`)
+        .send({ source_node_id: SOURCE_NODE, target_node_id: TARGET_NODE, label: 'x', type: 'y' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe('Target node not found in this project');
+    });
+
+    it('returns 422 when duplicate edge exists', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: SOURCE_NODE }] }) // source exists
+        .mockResolvedValueOnce({ rows: [{ id: TARGET_NODE }] }) // target exists
+        .mockResolvedValueOnce({ rows: [{ id: EDGE_ID }] }); // duplicate found
+
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/edges`)
+        .send({ source_node_id: SOURCE_NODE, target_node_id: TARGET_NODE, label: 'x', type: 'y' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe('An edge already exists between these two nodes');
+    });
+  });
+
+  describe('PATCH /api/context-graph/edges/:id', () => {
+    it('updates edge and returns 200', async () => {
+      const updatedEdge = {
+        id: EDGE_ID,
+        project_id: PROJECT_ID,
+        source_node_id: SOURCE_NODE,
+        target_node_id: TARGET_NODE,
+        label: 'new_label',
+        type: 'dependency',
+        properties: '{}',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:01Z',
+      };
+      pool.query.mockResolvedValueOnce({ rows: [updatedEdge] });
+
+      const res = await request(createApp())
+        .patch(`/api/context-graph/edges/${EDGE_ID}`)
+        .send({ label: 'new_label' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.label).toBe('new_label');
+      expect(mockedBroadcast).toHaveBeenCalledWith({
+        type: 'graph_edge_updated',
+        project_id: PROJECT_ID,
+        edge: updatedEdge,
+      });
+    });
+
+    it('returns 404 for non-existent edge', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const res = await request(createApp())
+        .patch(`/api/context-graph/edges/${EDGE_ID}`)
+        .send({ label: 'nope' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Edge not found');
+    });
+
+    it('returns 400 when no valid fields provided', async () => {
+      const res = await request(createApp())
+        .patch(`/api/context-graph/edges/${EDGE_ID}`)
+        .send({ bogus: 'field' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('No valid fields to update');
+    });
+
+    it('returns 400 when properties is invalid', async () => {
+      const res = await request(createApp())
+        .patch(`/api/context-graph/edges/${EDGE_ID}`)
+        .send({ properties: 'not-json' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('properties must be a valid JSON object');
+    });
+  });
+
+  describe('DELETE /api/context-graph/edges/:id', () => {
+    it('deletes edge and returns 200', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: EDGE_ID, project_id: PROJECT_ID }] });
+
+      const res = await request(createApp())
+        .delete(`/api/context-graph/edges/${EDGE_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(EDGE_ID);
+      expect(mockedBroadcast).toHaveBeenCalledWith({
+        type: 'graph_edge_deleted',
+        project_id: PROJECT_ID,
+        edgeId: EDGE_ID,
+      });
+    });
+
+    it('returns 404 for non-existent edge', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const res = await request(createApp())
+        .delete(`/api/context-graph/edges/${EDGE_ID}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Edge not found');
+    });
+  });
 });

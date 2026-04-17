@@ -19,6 +19,7 @@ import { storiesRouter } from './routes/stories';
 import { contextGraphRouter } from './routes/context-graph';
 import { contextNodesCrudRouter } from './routes/context-nodes-crud';
 import { taskLifecycleRouter } from './routes/task-lifecycle';
+import { usageRouter } from './routes/usage';
 import { v2Router } from './api/v2';
 import { tasksRouter as apiTasksRouter } from './api/tasks';
 
@@ -43,6 +44,7 @@ app.use(storiesRouter);
 app.use(contextGraphRouter);
 app.use(contextNodesCrudRouter);
 app.use(taskLifecycleRouter);
+app.use(usageRouter);
 app.use(v2Router);
 app.use(apiTasksRouter);
 

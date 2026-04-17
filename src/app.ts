@@ -17,6 +17,7 @@ import { graphRouter } from './routes/graph';
 import { tasksRouter } from './routes/tasks';
 import { storiesRouter } from './routes/stories';
 import { contextGraphRouter } from './routes/context-graph';
+import { contextNodesCrudRouter } from './routes/context-nodes-crud';
 import { v2Router } from './api/v2';
 import { tasksRouter } from './api/tasks';
 
@@ -39,6 +40,7 @@ app.use(graphRouter);
 app.use(tasksRouter);
 app.use(storiesRouter);
 app.use(contextGraphRouter);
+app.use(contextNodesCrudRouter);
 app.use(v2Router);
 app.use(tasksRouter);
 

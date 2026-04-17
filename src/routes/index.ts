@@ -14,3 +14,4 @@ export { graphRouter } from './graph';
 export { tasksRouter } from './tasks';
 export { storiesRouter } from './stories';
 export { contextGraphRouter } from './context-graph';
+export { contextNodesCrudRouter } from './context-nodes-crud';

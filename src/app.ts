@@ -18,8 +18,9 @@ import { tasksRouter } from './routes/tasks';
 import { storiesRouter } from './routes/stories';
 import { contextGraphRouter } from './routes/context-graph';
 import { contextNodesCrudRouter } from './routes/context-nodes-crud';
+import { taskLifecycleRouter } from './routes/task-lifecycle';
 import { v2Router } from './api/v2';
-import { tasksRouter } from './api/tasks';
+import { tasksRouter as apiTasksRouter } from './api/tasks';
 
 const app = express();
 
@@ -41,8 +42,9 @@ app.use(tasksRouter);
 app.use(storiesRouter);
 app.use(contextGraphRouter);
 app.use(contextNodesCrudRouter);
+app.use(taskLifecycleRouter);
 app.use(v2Router);
-app.use(tasksRouter);
+app.use(apiTasksRouter);
 
 // Static file serving: prefer built SPA in client/dist/, fall back to client/ scaffold
 const clientDir = join(__dirname, '../client');

@@ -6,6 +6,72 @@ export const contextGraphRouter = Router();
 
 const ALLOWED_FIELDS = ['label', 'type', 'properties', 'x', 'y', 'pinned'] as const;
 
+// ─── Full graph load ─────────────────────────────────────────────────────────
+
+contextGraphRouter.get('/api/context-graph/:projectId', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { projectId } = req.params;
+
+    const [nodesRes, edgesRes] = await Promise.all([
+      pool.query(
+        `SELECT id, project_id, label, type, x, y, pinned, properties, created_at, updated_at
+         FROM context_graph_nodes WHERE project_id = $1
+         ORDER BY created_at`,
+        [projectId],
+      ),
+      pool.query(
+        `SELECT id, project_id, source_node_id, target_node_id, label, type, properties, created_at, updated_at
+         FROM graph_node_edges WHERE project_id = $1
+         ORDER BY created_at`,
+        [projectId],
+      ),
+    ]);
+
+    res.json({ nodes: nodesRes.rows, edges: edgesRes.rows });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ─── Node create ─────────────────────────────────────────────────────────────
+
+contextGraphRouter.post('/api/context-graph/:projectId/nodes', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { projectId } = req.params;
+    const { label, type, x, y, properties } = req.body;
+
+    if (!label || typeof label !== 'string') {
+      res.status(400).json({ error: 'label is required and must be a string' });
+      return;
+    }
+
+    if (properties !== undefined && (typeof properties !== 'object' || properties === null || Array.isArray(properties))) {
+      res.status(400).json({ error: 'properties must be a valid JSON object' });
+      return;
+    }
+
+    const props = properties ? JSON.stringify(properties) : '{}';
+    const nodeType = typeof type === 'string' && type.length > 0 ? type : 'concept';
+    const nodeX = Number.isFinite(x) ? x : 0;
+    const nodeY = Number.isFinite(y) ? y : 0;
+
+    const { rows } = await pool.query(
+      `INSERT INTO context_graph_nodes (project_id, label, type, x, y, properties)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [projectId, label, nodeType, nodeX, nodeY, props],
+    );
+
+    const node = rows[0];
+    broadcast({ type: 'graph_node_created', projectId, node });
+    res.status(201).json(node);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // ─── Edge CRUD ───────────────────────────────────────────────────────────────
 
 contextGraphRouter.post('/api/context-graph/:projectId/edges', async (req: Request, res: Response) => {

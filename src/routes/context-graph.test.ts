@@ -48,6 +48,100 @@ describe('context-graph API', () => {
     mockedGetPool.mockReturnValue(pool as any);
   });
 
+  describe('GET /api/context-graph/:projectId', () => {
+    it('returns nodes and edges for the project', async () => {
+      const nodes = [
+        { id: NODE_ID, project_id: PROJECT_ID, label: 'A', type: 'concept', x: 0, y: 0, pinned: false, properties: {}, created_at: 't', updated_at: 't' },
+      ];
+      const edges = [
+        { id: 'e1', project_id: PROJECT_ID, source_node_id: NODE_ID, target_node_id: 'n2', label: 'rel', type: 'dependency', properties: {}, created_at: 't', updated_at: 't' },
+      ];
+      pool.query
+        .mockResolvedValueOnce({ rows: nodes })
+        .mockResolvedValueOnce({ rows: edges });
+
+      const res = await request(createApp()).get(`/api/context-graph/${PROJECT_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.nodes).toEqual(nodes);
+      expect(res.body.edges).toEqual(edges);
+    });
+
+    it('returns empty arrays for project with no graph', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const res = await request(createApp()).get(`/api/context-graph/${PROJECT_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ nodes: [], edges: [] });
+    });
+  });
+
+  describe('POST /api/context-graph/:projectId/nodes', () => {
+    it('creates a node with defaults and broadcasts', async () => {
+      const createdNode = {
+        id: NODE_ID, project_id: PROJECT_ID, label: 'New', type: 'concept',
+        x: 0, y: 0, pinned: false, properties: {},
+        created_at: 't', updated_at: 't',
+      };
+      pool.query.mockResolvedValueOnce({ rows: [createdNode] });
+
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/nodes`)
+        .send({ label: 'New' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe(NODE_ID);
+      expect(mockedBroadcast).toHaveBeenCalledWith({
+        type: 'graph_node_created',
+        projectId: PROJECT_ID,
+        node: createdNode,
+      });
+      const params = pool.query.mock.calls[0][1] as any[];
+      expect(params[0]).toBe(PROJECT_ID);
+      expect(params[1]).toBe('New');
+      expect(params[2]).toBe('concept');
+      expect(params[3]).toBe(0);
+      expect(params[4]).toBe(0);
+      expect(params[5]).toBe('{}');
+    });
+
+    it('accepts optional type, x, y, properties', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: NODE_ID, project_id: PROJECT_ID }] });
+
+      await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/nodes`)
+        .send({ label: 'X', type: 'task', x: 100, y: 50, properties: { k: 'v' } });
+
+      const params = pool.query.mock.calls[0][1] as any[];
+      expect(params[2]).toBe('task');
+      expect(params[3]).toBe(100);
+      expect(params[4]).toBe(50);
+      expect(params[5]).toBe('{"k":"v"}');
+    });
+
+    it('returns 400 when label missing', async () => {
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/nodes`)
+        .send({ type: 'concept' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/label/);
+      expect(mockedBroadcast).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when properties is not a JSON object', async () => {
+      const res = await request(createApp())
+        .post(`/api/context-graph/${PROJECT_ID}/nodes`)
+        .send({ label: 'X', properties: [1, 2] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('properties must be a valid JSON object');
+    });
+  });
+
   describe('PATCH /api/context-graph/nodes/:id', () => {
     it('updates a node and returns 200', async () => {
       const updatedNode = {

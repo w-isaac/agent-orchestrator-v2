@@ -5,7 +5,7 @@
  */
 
 /* exported ForceGraph */
-/* global d3 */
+/* global d3, GraphDragEdge, EdgeEditModal, NodeEditModal */
 
 var ForceGraph = (function () {
   'use strict';
@@ -156,6 +156,24 @@ var ForceGraph = (function () {
       });
     });
 
+    // Edge-handle / drag-to-create-edge + node double-click-to-edit.
+    // Activated when the companion modules are loaded on the page.
+    var cleanupEditing = null;
+    if (typeof GraphDragEdge !== 'undefined'
+        && typeof EdgeEditModal !== 'undefined'
+        && typeof NodeEditModal !== 'undefined'
+        && data.projectId) {
+      cleanupEditing = bindEditing({
+        svg: svg,
+        g: g,
+        node: node,
+        nodes: nodes,
+        edges: edges,
+        projectId: data.projectId,
+        onReload: data.onReload,
+      });
+    }
+
     // Toolbar controls
     var zoomInBtn = document.getElementById('zoom-in');
     var zoomOutBtn = document.getElementById('zoom-out');
@@ -177,7 +195,115 @@ var ForceGraph = (function () {
         if (zoomInBtn) zoomInBtn.removeEventListener('click', handleZoomIn);
         if (zoomOutBtn) zoomOutBtn.removeEventListener('click', handleZoomOut);
         if (zoomResetBtn) zoomResetBtn.removeEventListener('click', handleZoomReset);
+        if (cleanupEditing) cleanupEditing();
       }
+    };
+  }
+
+  /**
+   * Wire edge-drag creation and node edit triggers onto the rendered graph.
+   * Returns a cleanup function.
+   */
+  function bindEditing(ctx) {
+    var svg = ctx.svg;
+    var g = ctx.g;
+    var nodeSel = ctx.node;
+    var nodes = ctx.nodes;
+    var projectId = ctx.projectId;
+    var onReload = ctx.onReload || function () {};
+
+    function radiusOf(d) {
+      var cfg = NODE_CONFIG[d.type] || NODE_CONFIG.artifact;
+      return cfg.r || (cfg.size || 20) / 2;
+    }
+
+    function svgPoint(event) {
+      var node = svg.node();
+      var pt = node.createSVGPoint();
+      pt.x = event.clientX;
+      pt.y = event.clientY;
+      var ctm = g.node().getScreenCTM();
+      if (!ctm) return { x: event.clientX, y: event.clientY };
+      var transformed = pt.matrixTransform(ctm.inverse());
+      return { x: transformed.x, y: transformed.y };
+    }
+
+    function findTargetFromEvent(event) {
+      var el = document.elementFromPoint(event.clientX, event.clientY);
+      while (el && el !== document.body) {
+        if (el.classList && el.classList.contains('node')) {
+          var datum = d3.select(el).datum();
+          return datum ? datum.id : null;
+        }
+        el = el.parentNode;
+      }
+      return null;
+    }
+
+    var state = null;
+
+    function onMove(event) {
+      if (!state) return;
+      var p = svgPoint(event);
+      var candidate = findTargetFromEvent(event);
+      state = GraphDragEdge.updateDrag(state, p, candidate);
+      GraphDragEdge.renderPreview(g, state);
+      // Highlight target nodes
+      nodeSel.classed('drop-target-valid', function (d) {
+        return candidate && d.id === candidate && d.id !== state.sourceId;
+      });
+      nodeSel.classed('drop-target-invalid', function (d) {
+        return candidate && d.id === candidate && d.id === state.sourceId;
+      });
+    }
+
+    function onUp(event) {
+      if (!state) return;
+      var targetId = findTargetFromEvent(event);
+      var result = GraphDragEdge.endDrag(state, targetId, ctx.edges);
+      GraphDragEdge.removePreview(g);
+      nodeSel.classed('drop-target-valid', false).classed('drop-target-invalid', false);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+
+      if (result.action === 'create') {
+        var sourceNode = nodes.find(function (n) { return n.id === result.sourceId; });
+        var targetNode = nodes.find(function (n) { return n.id === result.targetId; });
+        EdgeEditModal.open({
+          projectId: projectId,
+          sourceNode: sourceNode,
+          targetNode: targetNode,
+          onSaved: onReload,
+        });
+      }
+      state = null;
+    }
+
+    var cleanupHandles = GraphDragEdge.attachHandles(nodeSel, {
+      getRadius: radiusOf,
+      onDragStart: function (event, d) {
+        state = GraphDragEdge.beginDrag(d);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      },
+    });
+
+    function onDblClick(event, d) {
+      event.stopPropagation();
+      NodeEditModal.open({
+        projectId: projectId,
+        node: d,
+        onSaved: onReload,
+      });
+    }
+    nodeSel.on('dblclick.nodeedit', onDblClick);
+
+    return function cleanup() {
+      cleanupHandles();
+      nodeSel.on('dblclick.nodeedit', null);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      GraphDragEdge.removePreview(g);
     };
   }
 
@@ -244,6 +370,8 @@ var ForceGraph = (function () {
           return;
         }
         showState('populated');
+        data.projectId = projectId;
+        data.onReload = function () { loadGraph(projectId); };
         currentGraph = ForceGraph.render(svgEl, data);
       })
       .catch(function (err) {

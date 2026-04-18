@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics — Agent Orchestrator</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/analytics.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <header class="navbar">
+    <div class="navbar-brand">Agent Orchestrator</div>
+    <nav aria-label="Primary navigation">
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/dashboard.html">Projects</a></li>
+        <li><a href="/tasks.html">Tasks</a></li>
+        <li><a href="/graph.html">Graph</a></li>
+        <li><a href="/analytics.html" aria-current="page">Analytics</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main id="main-content">
+    <section class="analytics-header">
+      <h1>Token Analytics</h1>
+      <form id="analytics-filters" class="analytics-filters" aria-label="Analytics filters">
+        <label>Project
+          <select id="filter-project" name="project_id">
+            <option value="">All projects</option>
+          </select>
+        </label>
+        <label>Agent
+          <select id="filter-agent" name="agent">
+            <option value="">All agents</option>
+            <option value="architecture">Architecture</option>
+            <option value="engineering">Engineering</option>
+            <option value="qa">QA</option>
+            <option value="security">Security</option>
+          </select>
+        </label>
+        <label>Bucket
+          <select id="filter-bucket" name="bucket">
+            <option value="hourly">Hourly</option>
+            <option value="daily" selected>Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </label>
+        <label>From
+          <input type="date" id="filter-from" name="from">
+        </label>
+        <label>To
+          <input type="date" id="filter-to" name="to">
+        </label>
+        <button type="submit" class="btn-primary">Apply</button>
+      </form>
+    </section>
+
+    <section class="kpi-row" aria-label="Key metrics">
+      <div class="kpi" id="kpi-tokens">
+        <span class="kpi-label" title="Total input + output tokens in window">Total tokens</span>
+        <span class="kpi-value">—</span>
+      </div>
+      <div class="kpi" id="kpi-cost">
+        <span class="kpi-label" title="Total USD cost across all models in window">Total cost</span>
+        <span class="kpi-value">—</span>
+      </div>
+      <div class="kpi" id="kpi-first-try">
+        <span class="kpi-label" title="Tasks completed with zero retries and zero QA bounces">First-try success</span>
+        <span class="kpi-value">—</span>
+      </div>
+      <div class="kpi" id="kpi-rework">
+        <span class="kpi-label" title="Cost attributable to tasks that retried or bounced from QA">Rework cost</span>
+        <span class="kpi-value">—</span>
+      </div>
+      <div class="kpi" id="kpi-auto-merge">
+        <span class="kpi-label" title="Auto-merges divided by all detected conflicts">Auto-merge rate</span>
+        <span class="kpi-value">—</span>
+      </div>
+    </section>
+
+    <div class="panels-grid">
+      <section class="panel panel-wide" aria-labelledby="token-usage-title">
+        <header class="panel-header">
+          <h2 id="token-usage-title">Token usage over time</h2>
+          <span class="panel-hint" title="Sum of input + output tokens per bucket">per bucket</span>
+        </header>
+        <div id="token-usage-panel" class="panel-body"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="cost-model-title">
+        <header class="panel-header">
+          <h2 id="cost-model-title">Effective cost by model</h2>
+          <span class="panel-hint" title="USD cost grouped by Claude model">$ by model</span>
+        </header>
+        <div id="cost-model-panel" class="panel-body"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="success-title">
+        <header class="panel-header">
+          <h2 id="success-title">First-try success rate</h2>
+          <span class="panel-hint" title="Per agent: % of tasks completed with no retries or QA bounces">per agent</span>
+        </header>
+        <div id="success-rate-panel" class="panel-body"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="rework-title">
+        <header class="panel-header">
+          <h2 id="rework-title">Rework cost</h2>
+          <span class="panel-hint" title="Cost from retried / QA-bounced tasks">retries + QA bounces</span>
+        </header>
+        <div id="rework-panel" class="panel-body"></div>
+      </section>
+
+      <section class="panel panel-wide" aria-labelledby="budget-title">
+        <header class="panel-header">
+          <h2 id="budget-title">Project budget utilization</h2>
+          <span class="panel-hint" title="Green <75%, Amber 75–90%, Red 90–100%, Dark red over budget">75% / 90% thresholds</span>
+        </header>
+        <div id="budget-panel" class="panel-body"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="conflicts-title">
+        <header class="panel-header">
+          <h2 id="conflicts-title">Conflicts &amp; auto-merge</h2>
+          <span class="panel-hint" title="From conflict_resolution_log">resolution outcomes</span>
+        </header>
+        <div id="conflicts-panel" class="panel-body"></div>
+      </section>
+    </div>
+  </main>
+  <footer>
+    <p>&copy; 2026 Agent Orchestrator. All rights reserved.</p>
+  </footer>
+  <script src="/js/analytics.js"></script>
+</body>
+</html>

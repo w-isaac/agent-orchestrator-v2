@@ -23,6 +23,7 @@ import { usageRouter } from './routes/usage';
 import { subTasksRouter } from './routes/sub-tasks';
 import { conflictLogRouter } from './routes/conflict-log';
 import { conflictsRouter } from './routes/conflicts';
+import { analyticsRouter } from './routes/analytics';
 import { v2Router } from './api/v2';
 import { tasksRouter as apiTasksRouter } from './api/tasks';
 
@@ -51,6 +52,7 @@ app.use(usageRouter);
 app.use(subTasksRouter);
 app.use(conflictLogRouter);
 app.use(conflictsRouter);
+app.use(analyticsRouter);
 app.use(v2Router);
 app.use(apiTasksRouter);
 

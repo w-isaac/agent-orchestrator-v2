@@ -18,3 +18,4 @@ export { contextNodesCrudRouter } from './context-nodes-crud';
 export { taskLifecycleRouter } from './task-lifecycle';
 export { usageRouter } from './usage';
 export { conflictLogRouter } from './conflict-log';
+export { analyticsRouter } from './analytics';

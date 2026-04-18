@@ -1,5 +1,6 @@
 import { validateEnv, connectWithRetry, runMigrations } from './lib';
 import app from './app';
+import { register as registerAnalyticsRefresh } from './jobs/refreshAnalyticsMv';
 
 async function main() {
   const config = validateEnv();
@@ -7,6 +8,8 @@ async function main() {
   const pool = await connectWithRetry();
 
   await runMigrations(pool, config.migrationsDir);
+
+  registerAnalyticsRefresh({ pool });
 
   app.listen(config.port, () => {
     console.log(`Server listening on :${config.port}`);

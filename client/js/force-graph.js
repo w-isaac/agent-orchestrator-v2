@@ -5,7 +5,7 @@
  */
 
 /* exported ForceGraph */
-/* global d3, GraphDragEdge, EdgeEditModal, NodeEditModal */
+/* global d3, GraphDragEdge, EdgeEditModal, NodeEditModal, ErrorToast, OptimisticGraph */
 
 var ForceGraph = (function () {
   'use strict';
@@ -70,8 +70,9 @@ var ForceGraph = (function () {
     var link = linkGroup.selectAll('line')
       .data(edges)
       .join('line')
+      .attr('class', function (d) { return d._pending ? 'link pending' : 'link'; })
       .attr('stroke', EDGE_COLOR)
-      .attr('stroke-width', function (d) { return Math.max(1, Math.min(d.weight * 3, 6)); })
+      .attr('stroke-width', function (d) { return Math.max(1, Math.min((d.weight || 1) * 3, 6)); })
       .attr('stroke-opacity', 0.6)
       .on('mouseenter', function (event, d) {
         d3.select(this).attr('stroke', EDGE_HOVER_COLOR).attr('stroke-opacity', 1);
@@ -96,7 +97,7 @@ var ForceGraph = (function () {
     var node = nodeGroup.selectAll('g')
       .data(nodes)
       .join('g')
-      .attr('class', 'node');
+      .attr('class', function (d) { return d._pending ? 'node pending' : 'node'; });
 
     // Draw shapes per type
     node.each(function (d) {
@@ -171,6 +172,7 @@ var ForceGraph = (function () {
         edges: edges,
         projectId: data.projectId,
         onReload: data.onReload,
+        optimisticHandlers: data.optimisticHandlers,
       });
     }
 
@@ -269,12 +271,17 @@ var ForceGraph = (function () {
       if (result.action === 'create') {
         var sourceNode = nodes.find(function (n) { return n.id === result.sourceId; });
         var targetNode = nodes.find(function (n) { return n.id === result.targetId; });
-        EdgeEditModal.open({
+        var edgeOpts = {
           projectId: projectId,
           sourceNode: sourceNode,
           targetNode: targetNode,
-          onSaved: onReload,
-        });
+        };
+        if (ctx.optimisticHandlers && typeof ctx.optimisticHandlers.onEdgeSave === 'function') {
+          edgeOpts.onOptimisticApply = ctx.optimisticHandlers.onEdgeSave;
+        } else {
+          edgeOpts.onSaved = onReload;
+        }
+        EdgeEditModal.open(edgeOpts);
       }
       state = null;
     }
@@ -290,11 +297,16 @@ var ForceGraph = (function () {
 
     function onDblClick(event, d) {
       event.stopPropagation();
-      NodeEditModal.open({
+      var nodeOpts = {
         projectId: projectId,
         node: d,
-        onSaved: onReload,
-      });
+      };
+      if (ctx.optimisticHandlers && typeof ctx.optimisticHandlers.onNodeSave === 'function') {
+        nodeOpts.onOptimisticApply = ctx.optimisticHandlers.onNodeSave;
+      } else {
+        nodeOpts.onSaved = onReload;
+      }
+      NodeEditModal.open(nodeOpts);
     }
     nodeSel.on('dblclick.nodeedit', onDblClick);
 
@@ -333,6 +345,169 @@ var ForceGraph = (function () {
   if (!svgEl) return; // Not on graph page
 
   var currentGraph = null;
+  var currentState = { nodes: [], edges: [] };
+  var currentProjectId = null;
+  var tempIdCounter = 0;
+
+  var toastStack = null;
+  if (typeof ErrorToast !== 'undefined') {
+    toastStack = ErrorToast.createStack(document.body);
+  }
+
+  function nextTempId(prefix) {
+    tempIdCounter += 1;
+    return (prefix || 'tmp') + '-' + Date.now() + '-' + tempIdCounter;
+  }
+
+  function setState(next) {
+    currentState = next;
+    rerender();
+  }
+
+  function rerender() {
+    if (currentGraph) {
+      currentGraph.destroy();
+      currentGraph = null;
+    }
+    currentGraph = ForceGraph.render(svgEl, {
+      nodes: currentState.nodes,
+      edges: currentState.edges,
+      projectId: currentProjectId,
+      onReload: function () { loadGraph(currentProjectId); },
+      optimisticHandlers: optimisticHandlers,
+    });
+  }
+
+  function showToast(message) {
+    if (toastStack) toastStack.addToast(message || 'Operation failed');
+  }
+
+  function requestNodeCreate(projectId, payload) {
+    return fetch('/api/context-graph/' + encodeURIComponent(projectId) + '/nodes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(parseResponse);
+  }
+  function requestNodeUpdate(nodeId, payload) {
+    return fetch('/api/context-graph/nodes/' + encodeURIComponent(nodeId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(parseResponse);
+  }
+  function requestNodeDelete(nodeId) {
+    return fetch('/api/context-graph/nodes/' + encodeURIComponent(nodeId), {
+      method: 'DELETE',
+    }).then(parseEmpty);
+  }
+  function requestEdgeCreate(projectId, body) {
+    return fetch('/api/context-graph/' + encodeURIComponent(projectId) + '/edges', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(parseResponse);
+  }
+  function requestEdgeUpdate(edgeId, payload) {
+    return fetch('/api/context-graph/edges/' + encodeURIComponent(edgeId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(parseResponse);
+  }
+  function requestEdgeDelete(edgeId) {
+    return fetch('/api/context-graph/edges/' + encodeURIComponent(edgeId), {
+      method: 'DELETE',
+    }).then(parseEmpty);
+  }
+  function parseResponse(res) {
+    if (!res.ok) {
+      return res.json().then(function (j) {
+        throw new Error((j && j.error) || ('HTTP ' + res.status));
+      }, function () { throw new Error('HTTP ' + res.status); });
+    }
+    return res.json();
+  }
+  function parseEmpty(res) {
+    if (!res.ok) {
+      return res.json().then(function (j) {
+        throw new Error((j && j.error) || ('HTTP ' + res.status));
+      }, function () { throw new Error('HTTP ' + res.status); });
+    }
+    return null;
+  }
+
+  var optimisticHandlers = {
+    onNodeSave: function (info) {
+      var projectId = currentProjectId;
+      if (info.nodeId) {
+        OptimisticGraph.mutate({
+          state: currentState,
+          change: { op: 'update', entity: 'node', data: Object.assign({ id: info.nodeId }, info.payload) },
+          request: function () { return requestNodeUpdate(info.nodeId, info.payload); },
+          onStateChange: setState,
+          onError: function (err) { showToast((err && err.message) || 'Failed to update node'); },
+        });
+      } else {
+        var tempId = nextTempId('node');
+        OptimisticGraph.mutate({
+          state: currentState,
+          change: { op: 'create', entity: 'node', data: Object.assign({ id: tempId, type: info.payload.type, label: info.payload.label, properties: info.payload.properties }) },
+          request: function () { return requestNodeCreate(projectId, info.payload); },
+          onStateChange: setState,
+          onError: function (err) { showToast((err && err.message) || 'Failed to create node'); },
+        });
+      }
+    },
+    onNodeDelete: function (nodeId) {
+      OptimisticGraph.mutate({
+        state: currentState,
+        change: { op: 'delete', entity: 'node', data: { id: nodeId } },
+        request: function () { return requestNodeDelete(nodeId); },
+        onStateChange: setState,
+        onError: function (err) { showToast((err && err.message) || 'Failed to delete node'); },
+      });
+    },
+    onEdgeSave: function (info) {
+      var projectId = currentProjectId;
+      if (info.edgeId) {
+        OptimisticGraph.mutate({
+          state: currentState,
+          change: { op: 'update', entity: 'edge', data: Object.assign({ id: info.edgeId }, info.payload) },
+          request: function () { return requestEdgeUpdate(info.edgeId, info.payload); },
+          onStateChange: setState,
+          onError: function (err) { showToast((err && err.message) || 'Failed to update edge'); },
+        });
+      } else {
+        var tempId = nextTempId('edge');
+        var body = Object.assign({
+          source_node_id: info.sourceId,
+          target_node_id: info.targetId,
+        }, info.payload);
+        OptimisticGraph.mutate({
+          state: currentState,
+          change: {
+            op: 'create',
+            entity: 'edge',
+            data: Object.assign({ id: tempId }, body),
+          },
+          request: function () { return requestEdgeCreate(projectId, body); },
+          onStateChange: setState,
+          onError: function (err) { showToast((err && err.message) || 'Failed to create edge'); },
+        });
+      }
+    },
+    onEdgeDelete: function (edgeId) {
+      OptimisticGraph.mutate({
+        state: currentState,
+        change: { op: 'delete', entity: 'edge', data: { id: edgeId } },
+        request: function () { return requestEdgeDelete(edgeId); },
+        onStateChange: setState,
+        onError: function (err) { showToast((err && err.message) || 'Failed to delete edge'); },
+      });
+    },
+    showToast: showToast,
+  };
 
   function showState(state) {
     [loadingEl, emptyEl, errorEl, svgEl, toolbarEl, legendEl].forEach(function (el) {
@@ -353,6 +528,7 @@ var ForceGraph = (function () {
       showState('empty');
       return;
     }
+    currentProjectId = projectId;
     if (currentGraph) {
       currentGraph.destroy();
       currentGraph = null;
@@ -366,13 +542,13 @@ var ForceGraph = (function () {
       })
       .then(function (data) {
         if (!data.nodes || data.nodes.length === 0) {
+          currentState = { nodes: [], edges: [] };
           showState('empty');
           return;
         }
         showState('populated');
-        data.projectId = projectId;
-        data.onReload = function () { loadGraph(projectId); };
-        currentGraph = ForceGraph.render(svgEl, data);
+        currentState = { nodes: data.nodes.slice(), edges: (data.edges || []).slice() };
+        rerender();
       })
       .catch(function (err) {
         if (errorMsg) errorMsg.textContent = err.message || 'Failed to load graph';

@@ -229,6 +229,21 @@ var NodeEditModal = (function () {
       errorEl.textContent = '';
       var form = readForm();
       saveBtn.disabled = true;
+
+      if (typeof opts.onOptimisticApply === 'function') {
+        var labelErr = validateLabel(form.label);
+        if (labelErr) {
+          errorEl.textContent = labelErr;
+          saveBtn.disabled = false;
+          return;
+        }
+        var payload = buildPayload(form);
+        var nodeId = isEdit ? existing.id : null;
+        close();
+        opts.onOptimisticApply({ payload: payload, nodeId: nodeId });
+        return;
+      }
+
       save({
         projectId: opts.projectId,
         nodeId: isEdit ? existing.id : null,

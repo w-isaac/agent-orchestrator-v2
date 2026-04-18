@@ -177,12 +177,33 @@ var EdgeEditModal = (function () {
     saveBtn.addEventListener('click', function () {
       errorEl.textContent = '';
       saveBtn.disabled = true;
+      var form = readForm();
+
+      if (typeof opts.onOptimisticApply === 'function') {
+        var labelErr = validateLabel(form.label);
+        if (labelErr) {
+          errorEl.textContent = labelErr;
+          saveBtn.disabled = false;
+          return;
+        }
+        var payload = buildPayload(form);
+        var edgeId = isEdit ? existing.id : null;
+        close();
+        opts.onOptimisticApply({
+          payload: payload,
+          edgeId: edgeId,
+          sourceId: sourceId,
+          targetId: targetId,
+        });
+        return;
+      }
+
       save({
         projectId: opts.projectId,
         edgeId: isEdit ? existing.id : null,
         sourceId: sourceId,
         targetId: targetId,
-        form: readForm(),
+        form: form,
         fetch: opts.fetch,
       }).then(function (edge) {
         if (opts.onSaved) opts.onSaved(edge);

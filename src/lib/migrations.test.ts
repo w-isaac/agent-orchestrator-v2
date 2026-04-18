@@ -87,6 +87,32 @@ describe('runMigrations', () => {
     expect(mockClient.release).toHaveBeenCalled();
   });
 
+  it('skips .down.sql rollback files when discovering migrations', async () => {
+    const { mockPool, mockClient } = createMockPool();
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    mockedFs.existsSync.mockReturnValue(true);
+    mockedFs.readdirSync.mockReturnValue([
+      '20260418_001_create_gatekeeper_reviews.up.sql',
+      '20260418_001_create_gatekeeper_reviews.down.sql',
+    ] as any);
+    mockedFs.readFileSync.mockReturnValueOnce('CREATE TABLE gatekeeper_reviews;');
+
+    await runMigrations(mockPool as any, 'migrations');
+
+    expect(mockClient.query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (filename) VALUES ($1)',
+      ['20260418_001_create_gatekeeper_reviews.up.sql'],
+    );
+    expect(mockClient.query).not.toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (filename) VALUES ($1)',
+      ['20260418_001_create_gatekeeper_reviews.down.sql'],
+    );
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
   it('logs up to date when no pending migrations', async () => {
     const { mockPool } = createMockPool();
     mockPool.query

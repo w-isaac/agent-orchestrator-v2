@@ -26,7 +26,7 @@ export async function runMigrations(pool: Pool, migrationsDir: string): Promise<
   }
 
   const files = fs.readdirSync(absoluteDir)
-    .filter((f) => f.endsWith('.sql'))
+    .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
     .sort();
 
   const pending = files.filter((f) => !appliedSet.has(f));

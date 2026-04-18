@@ -68,4 +68,19 @@ describe('patchProjectSchema', () => {
     const r = patchProjectSchema.safeParse({ [field]: 'not-a-number' });
     expect(r.success).toBe(false);
   });
+
+  it('accepts auto_approve=true', () => {
+    const r = patchProjectSchema.safeParse({ auto_approve: true });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts auto_approve=false', () => {
+    const r = patchProjectSchema.safeParse({ auto_approve: false });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects non-boolean auto_approve', () => {
+    const r = patchProjectSchema.safeParse({ auto_approve: 'true' });
+    expect(r.success).toBe(false);
+  });
 });

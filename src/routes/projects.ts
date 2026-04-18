@@ -8,7 +8,7 @@ projectsRouter.get('/api/projects', async (_req: Request, res: Response) => {
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT id, name, description, created_at, updated_at FROM projects ORDER BY created_at DESC',
+      'SELECT id, name, description, auto_approve, created_at, updated_at FROM projects ORDER BY created_at DESC',
     );
 
     const projectsWithStages = await Promise.all(
@@ -38,7 +38,7 @@ projectsRouter.post('/api/projects', async (req: Request, res: Response) => {
     const { rows } = await client.query(
       `INSERT INTO projects (name, description)
        VALUES ($1, $2)
-       RETURNING id, name, description, created_at, updated_at`,
+       RETURNING id, name, description, auto_approve, created_at, updated_at`,
       [name, description ?? null],
     );
     const project = rows[0];
@@ -57,7 +57,7 @@ projectsRouter.get('/api/projects/:id', async (req: Request, res: Response) => {
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT id, name, description, created_at, updated_at FROM projects WHERE id = $1',
+      'SELECT id, name, description, auto_approve, created_at, updated_at FROM projects WHERE id = $1',
       [req.params.id],
     );
     if (rows.length === 0) {
@@ -98,6 +98,72 @@ projectsRouter.get('/api/projects/:id', async (req: Request, res: Response) => {
         pipeline_stages: pipelineStages,
       },
     });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+const PATCH_ALLOWED_FIELDS = ['name', 'description', 'auto_approve'] as const;
+const ADMIN_ONLY_FIELDS = new Set(['auto_approve']);
+
+projectsRouter.patch('/api/projects/:id', async (req: Request, res: Response) => {
+  try {
+    const body = req.body ?? {};
+    const role = String(req.headers['x-user-role'] ?? '').toLowerCase();
+    const isAdmin = role === 'admin';
+
+    const updates: string[] = [];
+    const params: unknown[] = [];
+
+    for (const field of PATCH_ALLOWED_FIELDS) {
+      if (!(field in body)) continue;
+      const value = body[field];
+
+      if (ADMIN_ONLY_FIELDS.has(field) && !isAdmin) {
+        res.status(403).json({ error: `Admin role required to modify ${field}` });
+        return;
+      }
+
+      if (field === 'auto_approve') {
+        if (typeof value !== 'boolean') {
+          res.status(400).json({ error: 'auto_approve must be a boolean' });
+          return;
+        }
+      } else if (field === 'name') {
+        if (typeof value !== 'string' || value.trim().length === 0) {
+          res.status(400).json({ error: 'name cannot be empty' });
+          return;
+        }
+      } else if (field === 'description') {
+        if (value !== null && typeof value !== 'string') {
+          res.status(400).json({ error: 'description must be a string or null' });
+          return;
+        }
+      }
+
+      params.push(value);
+      updates.push(`${field} = $${params.length}`);
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ error: 'no valid fields to update' });
+      return;
+    }
+
+    updates.push(`updated_at = now()`);
+    params.push(req.params.id);
+
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `UPDATE projects SET ${updates.join(', ')} WHERE id = $${params.length}
+       RETURNING id, name, description, auto_approve, created_at, updated_at`,
+      params,
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+    res.json({ data: rows[0] });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

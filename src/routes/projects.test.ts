@@ -171,4 +171,74 @@ describe('projects API', () => {
       expect(pool._client.release).toHaveBeenCalled();
     });
   });
+
+  describe('PATCH /api/projects/:id', () => {
+    it('persists auto_approve=true when admin header is set', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 'p1', name: 'Proj', description: null, auto_approve: true, created_at: 'n', updated_at: 'n' }],
+      });
+
+      const res = await request(createApp())
+        .patch('/api/projects/p1')
+        .set('x-user-role', 'admin')
+        .send({ auto_approve: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.auto_approve).toBe(true);
+      const sql = String(pool.query.mock.calls[0][0]);
+      expect(sql).toMatch(/UPDATE projects/);
+      expect(sql).toMatch(/auto_approve\s*=/);
+      expect(pool.query.mock.calls[0][1]).toEqual([true, 'p1']);
+    });
+
+    it('returns 403 when non-admin attempts to set auto_approve', async () => {
+      const res = await request(createApp())
+        .patch('/api/projects/p1')
+        .send({ auto_approve: true });
+
+      expect(res.status).toBe(403);
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when x-user-role is not admin', async () => {
+      const res = await request(createApp())
+        .patch('/api/projects/p1')
+        .set('x-user-role', 'member')
+        .send({ auto_approve: false });
+
+      expect(res.status).toBe(403);
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when auto_approve is not a boolean', async () => {
+      const res = await request(createApp())
+        .patch('/api/projects/p1')
+        .set('x-user-role', 'admin')
+        .send({ auto_approve: 'true' });
+
+      expect(res.status).toBe(400);
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when project does not exist', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const res = await request(createApp())
+        .patch('/api/projects/missing')
+        .set('x-user-role', 'admin')
+        .send({ auto_approve: true });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 400 when no valid fields provided', async () => {
+      const res = await request(createApp())
+        .patch('/api/projects/p1')
+        .set('x-user-role', 'admin')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+  });
 });

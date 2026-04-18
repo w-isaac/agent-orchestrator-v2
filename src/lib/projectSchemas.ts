@@ -20,6 +20,7 @@ export const patchProjectSchema = z.object({
   frontend_port: portSchema.optional(),
   backend_port: portSchema.optional(),
   container_port: portSchema.optional(),
+  auto_approve: z.boolean().optional(),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

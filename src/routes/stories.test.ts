@@ -500,6 +500,161 @@ describe('POST /api/stories/:id/artifacts/auto-pack', () => {
   });
 });
 
+describe('AOV-83 stories CRUD', () => {
+  let mockPool: { query: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPool = { query: vi.fn() };
+    mockedGetPool.mockReturnValue(mockPool as any);
+  });
+
+  describe('POST /api/stories', () => {
+    it('creates a story with required fields and returns 201', async () => {
+      const created = {
+        id: 's1', project_id: 'p1', title: 'T', description: null,
+        acceptance_criteria: null, priority: 'medium', epic: null,
+        status: 'queued', github_issue_number: null,
+        created_at: '2026-04-18T00:00:00Z', updated_at: '2026-04-18T00:00:00Z',
+      };
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] }) // project check
+        .mockResolvedValueOnce({ rows: [created] });
+
+      const res = await request(createApp())
+        .post('/api/stories')
+        .send({ project_id: 'p1', title: 'T' });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual(created);
+    });
+
+    it('returns 400 when project_id is missing', async () => {
+      const res = await request(createApp()).post('/api/stories').send({ title: 'T' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when title is missing', async () => {
+      const res = await request(createApp()).post('/api/stories').send({ project_id: 'p1' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when priority is invalid', async () => {
+      const res = await request(createApp())
+        .post('/api/stories')
+        .send({ project_id: 'p1', title: 'T', priority: 'urgent' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 when project does not exist', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      const res = await request(createApp())
+        .post('/api/stories')
+        .send({ project_id: 'missing', title: 'T' });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 409 on duplicate github_issue_number', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+        .mockRejectedValueOnce(Object.assign(new Error('dup'), { code: '23505' }));
+      const res = await request(createApp())
+        .post('/api/stories')
+        .send({ project_id: 'p1', title: 'T', github_issue_number: 1 });
+      expect(res.status).toBe(409);
+    });
+  });
+
+  describe('GET /api/stories', () => {
+    it('lists all stories ordered by created_at DESC', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [{ id: 's1' }, { id: 's2' }] });
+      const res = await request(createApp()).get('/api/stories');
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      expect(mockPool.query.mock.calls[0][0]).toContain('ORDER BY created_at DESC');
+      expect(mockPool.query.mock.calls[0][1]).toEqual([]);
+    });
+
+    it('filters by project_id when provided', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      await request(createApp()).get('/api/stories?project_id=p1');
+      expect(mockPool.query.mock.calls[0][0]).toContain('project_id = $1');
+      expect(mockPool.query.mock.calls[0][1]).toEqual(['p1']);
+    });
+
+    it('filters by both project_id and status', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      await request(createApp()).get('/api/stories?project_id=p1&status=queued');
+      expect(mockPool.query.mock.calls[0][1]).toEqual(['p1', 'queued']);
+    });
+  });
+
+  describe('GET /api/stories/:id', () => {
+    it('returns the story when found', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [{ id: 's1', title: 'T' }] });
+      const res = await request(createApp()).get('/api/stories/s1');
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe('s1');
+    });
+
+    it('returns 404 when not found', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      const res = await request(createApp()).get('/api/stories/missing');
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('PATCH /api/stories/:id', () => {
+    it('updates only provided fields and returns the updated story', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [{ id: 's1', title: 'New', status: 'in_progress' }] });
+      const res = await request(createApp())
+        .patch('/api/stories/s1')
+        .send({ title: 'New', status: 'in_progress' });
+      expect(res.status).toBe(200);
+      const sql = mockPool.query.mock.calls[0][0];
+      expect(sql).toContain('title = $1');
+      expect(sql).toContain('status = $2');
+      expect(sql).toContain('updated_at = now()');
+      expect(mockPool.query.mock.calls[0][1]).toEqual(['New', 'in_progress', 's1']);
+    });
+
+    it('returns 400 when no valid fields are provided', async () => {
+      const res = await request(createApp()).patch('/api/stories/s1').send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for invalid status', async () => {
+      const res = await request(createApp()).patch('/api/stories/s1').send({ status: 'bogus' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for invalid priority', async () => {
+      const res = await request(createApp()).patch('/api/stories/s1').send({ priority: 'urgent' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 when the story does not exist', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+      const res = await request(createApp()).patch('/api/stories/missing').send({ title: 'X' });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('DELETE /api/stories/:id', () => {
+    it('returns 204 when the story is deleted', async () => {
+      mockPool.query.mockResolvedValueOnce({ rowCount: 1 });
+      const res = await request(createApp()).delete('/api/stories/s1');
+      expect(res.status).toBe(204);
+    });
+
+    it('returns 404 when the story does not exist', async () => {
+      mockPool.query.mockResolvedValueOnce({ rowCount: 0 });
+      const res = await request(createApp()).delete('/api/stories/missing');
+      expect(res.status).toBe(404);
+    });
+  });
+});
+
 describe('GET /api/stories/:id/context-preview (budget_limit)', () => {
   let mockPool: { query: ReturnType<typeof vi.fn> };
 

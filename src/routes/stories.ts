@@ -3,6 +3,197 @@ import { getPool } from '../lib/db';
 
 export const storiesRouter = Router();
 
+const VALID_STATUSES = ['queued', 'in_progress', 'gate', 'done', 'failed', 'cancelled'] as const;
+const VALID_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
+const STORY_COLUMNS =
+  'id, project_id, title, description, acceptance_criteria, priority, epic, status, github_issue_number, created_at, updated_at';
+
+/** POST /api/stories — create a new story */
+storiesRouter.post('/api/stories', async (req: Request, res: Response) => {
+  try {
+    const {
+      project_id,
+      title,
+      description,
+      acceptance_criteria,
+      priority,
+      epic,
+      github_issue_number,
+    } = req.body ?? {};
+
+    if (typeof project_id !== 'string' || project_id.length === 0) {
+      res.status(400).json({ error: 'project_id is required' });
+      return;
+    }
+    if (typeof title !== 'string' || title.trim().length === 0) {
+      res.status(400).json({ error: 'title is required' });
+      return;
+    }
+    if (priority !== undefined && !VALID_PRIORITIES.includes(priority)) {
+      res.status(400).json({ error: `priority must be one of: ${VALID_PRIORITIES.join(', ')}` });
+      return;
+    }
+    if (
+      github_issue_number !== undefined &&
+      github_issue_number !== null &&
+      (!Number.isInteger(github_issue_number) || github_issue_number <= 0)
+    ) {
+      res.status(400).json({ error: 'github_issue_number must be a positive integer' });
+      return;
+    }
+
+    const pool = getPool();
+    const projectCheck = await pool.query('SELECT 1 FROM projects WHERE id = $1', [project_id]);
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO stories (project_id, title, description, acceptance_criteria, priority, epic, github_issue_number)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING ${STORY_COLUMNS}`,
+        [
+          project_id,
+          title,
+          description ?? null,
+          acceptance_criteria ?? null,
+          priority ?? 'medium',
+          epic ?? null,
+          github_issue_number ?? null,
+        ],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        res.status(409).json({ error: 'Duplicate github_issue_number for this project' });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** GET /api/stories — list stories, optionally filtered by project_id and status */
+storiesRouter.get('/api/stories', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { project_id, status } = req.query;
+    const filters: string[] = [];
+    const params: unknown[] = [];
+    if (typeof project_id === 'string' && project_id.length > 0) {
+      params.push(project_id);
+      filters.push(`project_id = $${params.length}`);
+    }
+    if (typeof status === 'string' && status.length > 0) {
+      params.push(status);
+      filters.push(`status = $${params.length}`);
+    }
+    const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const { rows } = await pool.query(
+      `SELECT ${STORY_COLUMNS} FROM stories ${where} ORDER BY created_at DESC`,
+      params,
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** GET /api/stories/:id — fetch a single story */
+storiesRouter.get('/api/stories/:id', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT ${STORY_COLUMNS} FROM stories WHERE id = $1`,
+      [req.params.id],
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Story not found' });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** PATCH /api/stories/:id — update a subset of story fields */
+storiesRouter.patch('/api/stories/:id', async (req: Request, res: Response) => {
+  try {
+    const allowed = ['title', 'description', 'acceptance_criteria', 'priority', 'epic', 'status', 'github_issue_number'] as const;
+    const body = req.body ?? {};
+    const updates: string[] = [];
+    const params: unknown[] = [];
+
+    for (const field of allowed) {
+      if (!(field in body)) continue;
+      const value = body[field];
+      if (field === 'status' && !VALID_STATUSES.includes(value)) {
+        res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+        return;
+      }
+      if (field === 'priority' && !VALID_PRIORITIES.includes(value)) {
+        res.status(400).json({ error: `priority must be one of: ${VALID_PRIORITIES.join(', ')}` });
+        return;
+      }
+      if (field === 'title' && (typeof value !== 'string' || value.trim().length === 0)) {
+        res.status(400).json({ error: 'title cannot be empty' });
+        return;
+      }
+      params.push(value);
+      updates.push(`${field} = $${params.length}`);
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ error: 'no valid fields to update' });
+      return;
+    }
+
+    updates.push(`updated_at = now()`);
+    params.push(req.params.id);
+
+    const pool = getPool();
+    try {
+      const { rows } = await pool.query(
+        `UPDATE stories SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING ${STORY_COLUMNS}`,
+        params,
+      );
+      if (rows.length === 0) {
+        res.status(404).json({ error: 'Story not found' });
+        return;
+      }
+      res.json(rows[0]);
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        res.status(409).json({ error: 'Duplicate github_issue_number for this project' });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+/** DELETE /api/stories/:id — remove a story */
+storiesRouter.delete('/api/stories/:id', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { rowCount } = await pool.query('DELETE FROM stories WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Story not found' });
+      return;
+    }
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 /** GET /api/stories/:id/context-preview — list active artifacts for context preview */
 storiesRouter.get('/api/stories/:id/context-preview', async (req: Request, res: Response) => {
   try {
